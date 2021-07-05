@@ -150,18 +150,20 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
             assert tokens[start:end][0] == tokens[start:end][-1] == '*', f"{tokens[start:end]}"
 
         # Create (head, tail, relation) triples.
+        head_tail_pairs = []
         labels = []
         for relation in relations:
             label = [0] * len(relation2id)
 
-            head_idx = int(relation['head_id'][1:])
-            tail_idx = int(relation['tail_id'][1:])
+            head_idx = int(relation['head_id'][1:]) - 1
+            tail_idx = int(relation['tail_id'][1:]) - 1
             relation_id = relation['relation']
 
             relation_idx = relation2id[relation_id]
             label[relation_idx] = 1
 
-            labels.append((head_idx, tail_idx, label))
+            head_tail_pairs.append([head_idx, tail_idx])
+            labels.append(label)
 
         # Build input IDs.
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
@@ -170,6 +172,7 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
         # Finalize features.
         feature['input_ids'] = input_ids
         feature['entity_positions'] = entity_positions
+        feature['head_tail_pairs'] = head_tail_pairs
         feature['labels'] = labels
 
         features.append(feature)
