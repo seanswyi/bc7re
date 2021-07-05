@@ -1,5 +1,6 @@
 import argparse
 import csv
+from itertools import product
 import json
 import os
 
@@ -19,12 +20,14 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
                    'entity_positions': [],
                    'labels': []}
 
+        doc_id = sample['doc_id']
         title = sample['title']
         context = sample['context']
         text = ' '.join([title, context])
 
         entities = sample['entities']
         relations = sample['relations']
+        pair2relation = {(x['head_id'], x['tail_id']): x['relation'] for x in relations}
 
         # Sort entities by their starting positions to make our lives a little easier.
         entities_by_position = [(entity_id, entity) for entity_id, entity in entities.items()]
@@ -149,27 +152,52 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
 
             assert tokens[start:end][0] == tokens[start:end][-1] == '*', f"{tokens[start:end]}"
 
+        # Create entity pairs.
+        chemical_entities = []
+        gene_entities = []
+        for entity_id, entity in entities.items():
+            for mention in entity:
+                if mention['type'] == 'CHEMICAL':
+                    chemical_entities.append(entity_id)
+                    break
+                elif mention['type'] in ['GENE', 'GENE-Y', 'GENE-N']:
+                    gene_entities.append(entity_id)
+                    break
+
+        if (chemical_entities == []) or (gene_entities == []):
+            continue
+
+        all_entity_pairs = list(product(chemical_entities, gene_entities))
+
         # Create (head, tail, relation) triples.
         head_tail_pairs = []
         labels = []
-        for relation in relations:
-            label = [0] * len(relation2id)
+        for pair in all_entity_pairs:
+            relation = [0] * len(relation2id)
 
-            head_idx = int(relation['head_id'][1:]) - 1
-            tail_idx = int(relation['tail_id'][1:]) - 1
-            relation_id = relation['relation']
+            head_id = pair[0]
+            head_idx = int(head_id[1:]) - 1
 
-            relation_idx = relation2id[relation_id]
-            label[relation_idx] = 1
+            tail_id = pair[1]
+            tail_idx = int(tail_id[1:]) - 1
 
             head_tail_pairs.append([head_idx, tail_idx])
-            labels.append(label)
+
+            if (head_id, tail_id) in pair2relation:
+                relation_name = pair2relation[(head_id, tail_id)]
+                relation_id = relation2id[relation_name]
+                relation[relation_id] = 1
+            else:
+                relation[0] = 1
+
+            labels.append(relation)
 
         # Build input IDs.
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
 
         # Finalize features.
+        feature['doc_id'] = doc_id
         feature['input_ids'] = input_ids
         feature['entity_positions'] = entity_positions
         feature['head_tail_pairs'] = head_tail_pairs
