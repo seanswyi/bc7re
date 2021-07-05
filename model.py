@@ -2,7 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel
+
+from at_loss import ATLoss
 
 
 class DrugProtREModel(nn.Module):
@@ -12,6 +13,7 @@ class DrugProtREModel(nn.Module):
         self.args = args
         self.config = config
 
+        self.adaptive_thresholding_k = args.adaptive_thresholding_k
         self.bilinear_block_size = args.bilinear_block_size
         self.hidden_size = config.hidden_size
         self.max_seq_len = args.max_seq_len
@@ -23,7 +25,8 @@ class DrugProtREModel(nn.Module):
         self.cls_token_id = tokenizer.cls_token_id
         self.sep_token_id = tokenizer.sep_token_id
 
-        self.loss_function = nn.CrossEntropyLoss()
+        self.loss_function = ATLoss()
+        # self.loss_function = nn.CrossEntropyLoss()
 
         self.head_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
         self.tail_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
@@ -141,7 +144,25 @@ class DrugProtREModel(nn.Module):
                 head_representations.append(head_representation)
                 tail_representations.append(tail_representation)
 
-        return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0)
+        try:
+            return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0)
+        except RuntimeError:
+            import pdb; pdb.set_trace()
+
+    def get_label(self, logits, k=-1):
+        th_logit = logits[:, 0].unsqueeze(1)
+        output = torch.zeros_like(logits).to(logits)
+        mask = (logits > th_logit)
+
+        if k > 0:
+            top_v, _ = torch.topk(logits, k, dim=1)
+            top_v = top_v[:, -1]
+            mask = (logits >= top_v.unsqueeze(1)) & mask\
+
+        output[mask] = 1.0
+        output[:, 0] = (output.sum(1) == 0.).to(logits)
+
+        return output
 
     def forward(self, input_ids, attention_mask, entity_positions, head_tail_pairs, labels=None):
         start_tokens = [self.cls_token_id]
@@ -149,9 +170,9 @@ class DrugProtREModel(nn.Module):
 
         encoded_output, attention = self.encode(input_ids, attention_mask, start_tokens=start_tokens, end_tokens=end_tokens)
 
-        heads, tails, label_ids = self.get_representations(encoded_output=encoded_output,
-                                                           entity_positions=entity_positions,
-                                                           head_tail_pairs=head_tail_pairs)
+        heads, tails = self.get_representations(encoded_output=encoded_output,
+                                                entity_positions=entity_positions,
+                                                head_tail_pairs=head_tail_pairs)
 
         heads_extracted = self.head_extractor(heads)
         tails_extracted = self.tail_extractor(tails)
@@ -161,9 +182,18 @@ class DrugProtREModel(nn.Module):
         bl = (b1.unsqueeze(3) * b2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
         logits = self.bilinear(bl)
 
-        import pdb; pdb.set_trace()
+        predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
+        # predictions = torch.argmax(logits, dim=-1)
+        output = (predictions,)
 
-        if label_ids != []:
-            label_ids = torch.tensor(label_ids)
+        if labels:
+            labels = [torch.tensor(label) for label in labels]
+            labels = torch.cat(labels, dim=0).to(logits)
 
-        import pdb; pdb.set_trace()
+            assert heads.shape[0] == tails.shape[0] == len(labels), "Shape mismatch."
+
+            loss = self.loss_function(logits.float(), labels.float())
+
+            output += (loss,)
+
+        return output
