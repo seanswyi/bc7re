@@ -167,9 +167,6 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                     gene_entities.append(entity_id)
                     break
 
-        if (chemical_entities == []) or (gene_entities == []):
-            continue
-
         all_entity_pairs = list(product(chemical_entities, gene_entities))
 
         # Create (head, tail, relation) triples.
@@ -208,6 +205,9 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         # Build input IDs.
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
+
+        if sum(head_tail_pairs, []):
+            continue
 
         # Finalize features.
         feature['doc_id'] = doc_id
