@@ -1,9 +1,17 @@
+import sys
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from at_loss import ATLoss
+
+
+class EmptyHeadTailException(Exception):
+    def __init__(self, message="Empty head and tail pair."):
+        super().__init__(message)
+        pass
 
 
 class DrugProtREModel(nn.Module):
@@ -15,9 +23,12 @@ class DrugProtREModel(nn.Module):
 
         self.adaptive_thresholding_k = args.adaptive_thresholding_k
         self.bilinear_block_size = args.bilinear_block_size
+        self.classification_type = args.classification_type
+        self.classifier_type = args.classifier_type
         self.hidden_size = config.hidden_size
         self.max_seq_len = args.max_seq_len
         self.num_labels = args.num_labels
+        self.use_at_loss = args.use_at_loss
 
         self.model = backbone_model
         self.tokenizer = tokenizer
@@ -25,12 +36,24 @@ class DrugProtREModel(nn.Module):
         self.cls_token_id = tokenizer.cls_token_id
         self.sep_token_id = tokenizer.sep_token_id
 
-        self.loss_function = ATLoss()
-        # self.loss_function = nn.CrossEntropyLoss()
+        if args.use_at_loss:
+            self.loss_function = ATLoss()
+        elif not args.use_at_loss:
+            self.loss_function = nn.CrossEntropyLoss()
 
         self.head_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
         self.tail_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
-        self.bilinear = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
+
+        if args.classifier_type == 'bilinear':
+            self.classifier = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
+        elif (args.classifier_type == 'linear') and (args.classification_type == 'cls'):
+            self.classifier = nn.Linear(in_features=config.hidden_size, out_features=args.num_labels)
+        elif (args.classifier_type == 'linear') and (args.classification_type == 'entity_marker'):
+            self.classifier = nn.Linear(in_features=(config.hidden_size * 2), out_features=args.num_labels)
+
+        # self.bilinear = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
+        # self.cls_linear = nn.Linear(in_features=config.hidden_size, out_features=args.num_labels)
+        # self.linear = nn.Linear(in_features=(config.hidden_size * 2), out_features=args.num_labels)
 
     def encode(self, input_ids, attention_mask, start_tokens, end_tokens):
         _, seq_len = input_ids.shape
@@ -147,7 +170,8 @@ class DrugProtREModel(nn.Module):
         try:
             return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0)
         except RuntimeError:
-            import pdb; pdb.set_trace()
+            print(f"head_representations = {head_representations}\ntail_representations = {tail_representations}")
+            sys.exit()
 
     def get_label(self, logits, k=-1):
         th_logit = logits[:, 0].unsqueeze(1)
@@ -170,29 +194,47 @@ class DrugProtREModel(nn.Module):
 
         encoded_output, attention = self.encode(input_ids, attention_mask, start_tokens=start_tokens, end_tokens=end_tokens)
 
-        heads, tails = self.get_representations(encoded_output=encoded_output,
-                                                entity_positions=entity_positions,
-                                                head_tail_pairs=head_tail_pairs)
+        if self.classification_type == 'cls':
+            representations = []
+            for batch_idx, pairs in enumerate(head_tail_pairs):
+                cls_representation = encoded_output[batch_idx][0]
+                cls_representation_tiled = cls_representation.repeat(repeats=(len(pairs), 1))
+                representations.append(cls_representation_tiled)
 
-        heads_extracted = self.head_extractor(heads)
-        tails_extracted = self.tail_extractor(tails)
+            representations = torch.cat(representations, dim=0)
+        elif self.classification_type == 'entity_marker':
+            heads, tails = self.get_representations(encoded_output=encoded_output,
+                                                    entity_positions=entity_positions,
+                                                    head_tail_pairs=head_tail_pairs)
 
-        b1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
-        b2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
-        bl = (b1.unsqueeze(3) * b2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
-        logits = self.bilinear(bl)
+            if self.classifier_type == 'linear':
+                representations = torch.cat([heads, tails], dim=-1)
+            elif self.classifier_type == 'bilinear':
+                heads_extracted = self.head_extractor(heads)
+                tails_extracted = self.tail_extractor(tails)
 
-        predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
-        # predictions = torch.argmax(logits, dim=-1)
+                temp1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
+                temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
+                representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
+
+        logits = self.classifier(representations)
+
+        if self.use_at_loss:
+            predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
+        elif not self.use_at_loss:
+            predictions = torch.argmax(logits, dim=-1)
+
         output = (predictions,)
 
         if labels:
-            labels = [torch.tensor(label) for label in labels]
-            labels = torch.cat(labels, dim=0).to(logits)
+            if self.use_at_loss:
+                labels = [torch.tensor(label) for label in labels]
+                labels = torch.cat(labels, dim=0).to(logits).float()
+            elif not self.use_at_loss:
+                labels = [torch.tensor(label) for label in sum(labels, [])]
+                labels = torch.tensor([torch.argmax(label) for label in labels]).to(logits).long()
 
-            assert heads.shape[0] == tails.shape[0] == len(labels), "Shape mismatch."
-
-            loss = self.loss_function(logits.float(), labels.float())
+            loss = self.loss_function(logits.float(), labels)
 
             output += (loss,)
 
