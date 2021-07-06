@@ -11,8 +11,11 @@ with open(file='/hdd1/seokwon/data/BC7DP/relation2id.json') as f:
     relation2id = json.load(fp=f)
 
 
-def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='train'):
+def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='asterisk', mode='train'):
     features = []
+
+    num_positive_samples = 0
+    num_negative_samples = 0
 
     pbar = tqdm(iterable=data, desc=f"Converting {mode} data to features", total=len(data))
     for sample in pbar:
@@ -172,6 +175,8 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
         # Create (head, tail, relation) triples.
         head_tail_pairs = []
         labels = []
+        total_num_negative = len(relations) * negative_ratio
+        negative_count = 0
         for pair in all_entity_pairs:
             relation = [0] * len(relation2id)
 
@@ -181,14 +186,22 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
             tail_id = pair[1]
             tail_idx = int(tail_id[1:]) - 1
 
-            head_tail_pairs.append([head_idx, tail_idx])
-
             if (head_id, tail_id) in pair2relation:
                 relation_name = pair2relation[(head_id, tail_id)]
                 relation_id = relation2id[relation_name]
                 relation[relation_id] = 1
+
+                num_positive_samples += 1
             else:
+                if negative_count == total_num_negative:
+                    continue
+
                 relation[0] = 1
+                negative_count += 1
+
+                num_negative_samples += 1
+
+            head_tail_pairs.append([head_idx, tail_idx])
 
             labels.append(relation)
 
@@ -204,6 +217,9 @@ def convert_data_to_features(data, tokenizer, entity_marker='asterisk', mode='tr
         feature['labels'] = labels
 
         features.append(feature)
+
+    print(f"Number of positive samples ({mode}): {num_positive_samples}")
+    print(f"Number of negative samples ({mode}): {num_negative_samples}")
 
     return features
 
