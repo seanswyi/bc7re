@@ -103,15 +103,16 @@ class Trainer():
                 wandb.log({'loss': loss.item()}, step=num_steps)
                 num_steps += 1
 
-            results, all_predictions = self.evaluate()
+            results, all_predictions, averaged_eval_loss = self.evaluate()
             wandb.log(results, step=num_steps)
+            wandb.log({'eval_loss': averaged_eval_loss}, step=num_steps)
 
             if results['f1'] >= best_score:
                 best_score = results['f1']
                 torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/atlop_biobert.pt')
 
-                with open(file='/hdd1/seokwon/BC7/atlop_predictions.json', mode='w') as f:
-                    json.dump(obj=all_predictions, fp=f, indent=2)
+            with open(file=f'/hdd1/seokwon/BC7/atlop_predictions_epoch-{epoch + 1}.json', mode='w') as f:
+                json.dump(obj=all_predictions, fp=f, indent=2)
 
     def evaluate(self, mode='dev'):
         dev_features = convert_data_to_features(data=self.dev_data,
@@ -121,6 +122,7 @@ class Trainer():
                                                 mode='dev')
         dev_dataloader = DataLoader(dev_features, batch_size=self.batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
 
+        total_eval_loss = 0
         preds = []
         dev_pbar = tqdm(iterable=dev_dataloader, desc=f"Evaluating {mode}", total=len(dev_dataloader))
         for batch in dev_pbar:
@@ -131,12 +133,19 @@ class Trainer():
                       'entity_positions': batch[2],
                       'head_tail_pairs': batch[3]}
 
+            if mode == 'dev':
+                inputs['labels'] = batch[4]
+
             with torch.no_grad():
                 output = self.model(**inputs)
                 pred = output[0]
                 pred = pred.cpu().numpy()
                 preds.append(pred)
 
+                loss = output[-1]
+                total_eval_loss += loss.detach().cpu().item()
+
+        averaged_eval_loss = total_eval_loss / len(dev_dataloader)
         predictions = np.concatenate(preds, axis=0).astype(np.float32)
         answers, all_predictions = self.convert_to_evaluation_features(predictions, dev_features)
 
@@ -179,7 +188,7 @@ class Trainer():
             else:
                 f1 = 2 * (precision * recall) / (precision + recall)
 
-        return {'precision': precision, 'recall': recall, 'f1': f1}, all_predictions
+        return {'precision': precision, 'recall': recall, 'f1': f1}, all_predictions, averaged_eval_loss
 
     def convert_to_evaluation_features(self, predictions, features):
         head_idxs = []
@@ -196,18 +205,23 @@ class Trainer():
 
         results = []
         for idx, _ in enumerate(predictions):
-            prediction = predictions[idx]
-            prediction = np.nonzero(prediction)[0].tolist()
+            prediction = int(predictions[idx])
+            # prediction = np.nonzero(prediction)[0].tolist()
 
-            for pred in prediction:
-                result_dict = {'pmid': doc_ids[idx],
-                               'head_id': head_idxs[idx],
-                               'tail_id': tail_idxs[idx],
-                               'relation': id2relation[pred]}
+            result_dict = {'pmid': doc_ids[idx],
+                           'head_id': head_idxs[idx],
+                           'tail_id': tail_idxs[idx],
+                           'relation': id2relation[prediction]}
 
-                if pred != 0:
-                    results.append(result_dict)
+            # for pred in prediction:
+            #     result_dict = {'pmid': doc_ids[idx],
+            #                    'head_id': head_idxs[idx],
+            #                    'tail_id': tail_idxs[idx],
+            #                    'relation': id2relation[pred]}
 
-                all_results.append(result_dict)
+            if prediction != 0:
+                results.append(result_dict)
+
+            all_results.append(result_dict)
 
         return results, all_results
