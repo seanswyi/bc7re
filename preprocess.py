@@ -2,6 +2,7 @@ import argparse
 import csv
 from itertools import product
 import json
+import math
 import os
 
 from tqdm import tqdm
@@ -167,12 +168,15 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                     gene_entities.append(entity_id)
                     break
 
+        if (chemical_entities == []) or (gene_entities == []):
+            continue
+
         all_entity_pairs = list(product(chemical_entities, gene_entities))
 
         # Create (head, tail, relation) triples.
         head_tail_pairs = []
         labels = []
-        total_num_negative = len(relations) * negative_ratio
+        total_num_negative = math.floor(len(relations) * negative_ratio)
         negative_count = 0
         for pair in all_entity_pairs:
             relation = [0] * len(relation2id)
@@ -206,7 +210,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
 
-        if sum(head_tail_pairs, []):
+        if sum(head_tail_pairs, []) == []:
             continue
 
         # Finalize features.
