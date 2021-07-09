@@ -17,6 +17,11 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     backbone_model = AutoModel.from_pretrained(args.model_name_or_path)
 
+    if args.entity_marker == 'typed':
+        special_tokens_dict = {'additional_special_tokens': ['[CHEMICAL]', '[GENE]']}
+        _ = tokenizer.add_special_tokens(special_tokens_dict)
+        backbone_model.resize_token_embeddings(len(tokenizer))
+
     model = DrugProtREModel(args=args, config=config, backbone_model=backbone_model, tokenizer=tokenizer)
     model = model.to('cuda')
 
@@ -48,12 +53,12 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', default=5e-5, type=float)
     parser.add_argument('--max_seq_len', default=512, type=str)
     parser.add_argument('--model_name_or_path', default='dmis-lab/biobert-v1.1', type=str)
-    parser.add_argument('--negative_ratio', default=2, type=float)
+    parser.add_argument('--negative_ratio', default=0.5, type=float)
     parser.add_argument('--num_epochs', default=10, type=int)
     parser.add_argument('--num_labels', default=14, type=int)
     parser.add_argument('--train_file', default='train.json', type=str)
     parser.add_argument('--use_at_loss', action='store_true', default=False)
-    parser.add_argument('--warmup_ratio', default=0.06, type=float)
+    parser.add_argument('--warmup_ratio', default=0.01, type=float)
 
     args = parser.parse_args()
 
@@ -65,6 +70,11 @@ if __name__ == '__main__':
     if args.use_at_loss:
         wandb_name = 'AT_' + wandb_name
 
+    args.wandb_name = wandb_name
     wandb.init(project='BC7DP', name=wandb_name)
+
+    print('Arguments:')
+    for name, value in vars(args).items():
+        print(f'\t{name}: {value}')
 
     main(args)

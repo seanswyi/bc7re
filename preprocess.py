@@ -118,14 +118,23 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                 elif entity_marker == 'typed':
                     idx = [x[1] for x in entity_starts].index(word_idx)
                     entity_type = entity_starts[idx][0]
+
+                    if 'GENE' in entity_type:
+                        entity_type = 'GENE'
+
                     tokens_ = ['[' + entity_type + ']'] + tokens_
 
             if word_idx in [x[1] - 1 for x in entity_ends]:
                 if entity_marker == 'asterisk':
                     tokens_ = tokens_ + ['*']
                 elif entity_marker == 'typed':
-                    idx = [x[1] for x in entity_ends].index(word_idx)
+                    idx = [x[1] - 1 for x in entity_ends].index(word_idx)
                     entity_type = entity_ends[idx][0]
+
+                    if 'GENE' in entity_type:
+                        entity_type = 'GENE'
+
+                    tokens_ = tokens_ + ['[' + entity_type + ']']
 
             tokens.extend(tokens_)
             token_end = len(tokens)
@@ -148,13 +157,6 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                     token_lvl_end = word2token_span[word_lvl_end - 1][-1]
 
                 entity_positions.append([token_lvl_start, token_lvl_end])
-
-        # Check whether the markers are correct.
-        for entity_position in entity_positions:
-            start = entity_position[0]
-            end = entity_position[1]
-
-            assert tokens[start:end][0] == tokens[start:end][-1] == '*', f"{tokens[start:end]}"
 
         # Create entity pairs.
         chemical_entities = []

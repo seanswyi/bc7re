@@ -169,7 +169,7 @@ class DrugProtREModel(nn.Module):
 
         try:
             return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0)
-        except RuntimeError:
+        except EmptyHeadTailException():
             print(f"head_representations = {head_representations}\ntail_representations = {tail_representations}")
             sys.exit()
 

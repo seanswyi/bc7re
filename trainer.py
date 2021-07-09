@@ -52,9 +52,13 @@ class Trainer():
 
         self.entity_marker = args.entity_marker
 
+        self.use_at_loss = args.use_at_loss
+
         self.model = model
         self.optimizer = optimizer
         self.tokenizer = tokenizer
+
+        self.wandb_name = args.wandb_name
 
     def load_data(self, filepath):
         with open(file=filepath) as f:
@@ -100,6 +104,7 @@ class Trainer():
                 scheduler.step()
                 self.model.zero_grad()
 
+                wandb.log({'param_group1_lr': scheduler.get_last_lr()[0], 'param_group2_lr': scheduler.get_last_lr()[1]}, step=num_steps)
                 wandb.log({'loss': loss.item()}, step=num_steps)
                 num_steps += 1
 
@@ -109,9 +114,9 @@ class Trainer():
 
             if results['f1'] >= best_score:
                 best_score = results['f1']
-                torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/atlop_biobert.pt')
+                torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/{self.wandb_name}.pt')
 
-            with open(file=f'/hdd1/seokwon/BC7/atlop_predictions_epoch-{epoch + 1}.json', mode='w') as f:
+            with open(file=f'/hdd1/seokwon/BC7/predictions/{self.args.wandb_name}_predictions_epoch-{epoch + 1}.json', mode='w') as f:
                 json.dump(obj=all_predictions, fp=f, indent=2)
 
     def evaluate(self, mode='dev'):
@@ -121,6 +126,9 @@ class Trainer():
                                                 entity_marker=self.entity_marker,
                                                 mode='dev')
         dev_dataloader = DataLoader(dev_features, batch_size=self.batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
+
+        with open(file='/hdd1/seokwon/BC7/dev_samples_with_negative2.json', mode='w') as f:
+            json.dump(obj=dev_features, fp=f, indent=2)
 
         total_eval_loss = 0
         preds = []
@@ -204,24 +212,31 @@ class Trainer():
             doc_ids += [feature['doc_id'] for pair in head_tail_pairs]
 
         results = []
-        for idx, _ in enumerate(predictions):
-            prediction = int(predictions[idx])
-            # prediction = np.nonzero(prediction)[0].tolist()
+        for idx, prediction in enumerate(predictions):
+            if self.use_at_loss:
+                prediction = np.nonzero(prediction)[0].tolist()
 
-            result_dict = {'pmid': doc_ids[idx],
-                           'head_id': head_idxs[idx],
-                           'tail_id': tail_idxs[idx],
-                           'relation': id2relation[prediction]}
+                for pred in prediction:
+                    result_dict = {'pmid': doc_ids[idx],
+                                   'head_id': head_idxs[idx],
+                                   'tail_id': tail_idxs[idx],
+                                   'relation': id2relation[pred]}
 
-            # for pred in prediction:
-            #     result_dict = {'pmid': doc_ids[idx],
-            #                    'head_id': head_idxs[idx],
-            #                    'tail_id': tail_idxs[idx],
-            #                    'relation': id2relation[pred]}
+                    if pred != 0:
+                        results.append(result_dict)
 
-            if prediction != 0:
-                results.append(result_dict)
+                    all_results.append(result_dict)
+            else:
+                prediction = int(predictions[idx])
 
-            all_results.append(result_dict)
+                result_dict = {'pmid': doc_ids[idx],
+                               'head_id': head_idxs[idx],
+                               'tail_id': tail_idxs[idx],
+                               'relation': id2relation[prediction]}
+
+                if prediction != 0:
+                    results.append(result_dict)
+
+                all_results.append(result_dict)
 
         return results, all_results
