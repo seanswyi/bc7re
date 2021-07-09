@@ -94,7 +94,6 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
 
             entities[entity_id] = adjusted_mentions
 
-        # Insert entity markers in the front and back of entities.
         entity_starts = []
         entity_ends = []
         for entity_id, entity in entities.items():
@@ -104,59 +103,6 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                 entity_end = mention['end']
                 entity_starts.append((entity_type, entity_start))
                 entity_ends.append((entity_type, entity_end))
-
-        tokens = []
-        word2token_span = {}
-        current_idx = 0
-        for word_idx, word in enumerate(new_text):
-            tokens_ = tokenizer.tokenize(word)
-            token_start = len(tokens)
-
-            if word_idx in [x[1] for x in entity_starts]:
-                if entity_marker == 'asterisk':
-                    tokens_ = ['*'] + tokens_
-                elif entity_marker == 'typed':
-                    idx = [x[1] for x in entity_starts].index(word_idx)
-                    entity_type = entity_starts[idx][0]
-
-                    if 'GENE' in entity_type:
-                        entity_type = 'GENE'
-
-                    tokens_ = ['[' + entity_type + ']'] + tokens_
-
-            if word_idx in [x[1] - 1 for x in entity_ends]:
-                if entity_marker == 'asterisk':
-                    tokens_ = tokens_ + ['*']
-                elif entity_marker == 'typed':
-                    idx = [x[1] - 1 for x in entity_ends].index(word_idx)
-                    entity_type = entity_ends[idx][0]
-
-                    if 'GENE' in entity_type:
-                        entity_type = 'GENE'
-
-                    tokens_ = tokens_ + ['[' + entity_type + ']']
-
-            tokens.extend(tokens_)
-            token_end = len(tokens)
-            token_span = list(range(token_start, token_end + 1))
-
-            word2token_span[word_idx] = token_span
-
-        # Convert word-level spans to token-level spans.
-        entity_positions = []
-        for entity_id, entity in entities.items():
-            for mention in entity:
-                word_lvl_start = mention['start']
-                word_lvl_end = mention['end']
-
-                if word_lvl_end - word_lvl_start == 1:
-                    token_lvl_start = word2token_span[word_lvl_start][0]
-                    token_lvl_end = word2token_span[word_lvl_start][-1]
-                elif word_lvl_end - word_lvl_start > 1:
-                    token_lvl_start = word2token_span[word_lvl_start][0]
-                    token_lvl_end = word2token_span[word_lvl_end - 1][-1]
-
-                entity_positions.append([token_lvl_start, token_lvl_end])
 
         # Create entity pairs.
         chemical_entities = []
@@ -208,21 +154,94 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
 
             labels.append(relation)
 
-        # Build input IDs.
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
-        input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
-
         if sum(head_tail_pairs, []) == []:
             continue
 
-        # Finalize features.
-        feature['doc_id'] = doc_id
-        feature['input_ids'] = input_ids
-        feature['entity_positions'] = entity_positions
-        feature['head_tail_pairs'] = head_tail_pairs
-        feature['labels'] = labels
+        for pair, label in zip(head_tail_pairs, labels):
+            entity_starts_ = []
+            entity_ends_ = []
 
-        features.append(feature)
+            head = pair[0]
+            tail = pair[1]
+
+            entity_starts_.append(entity_starts[head])
+            entity_ends_.append(entity_ends[head])
+            entity_starts_.append(entity_starts[tail])
+            entity_ends_.append(entity_ends[tail])
+
+            tokens = []
+            word2token_span = {}
+            current_idx = 0
+            for word_idx, word in enumerate(new_text):
+                tokens_ = tokenizer.tokenize(word)
+                token_start = len(tokens)
+
+                if word_idx in [x[1] for x in entity_starts_]:
+                    if entity_marker == 'asterisk':
+                        tokens_ = ['*'] + tokens_
+                    elif entity_marker == 'typed':
+                        idx = [x[1] for x in entity_starts_].index(word_idx)
+                        entity_type = entity_starts_[idx][0]
+
+                        if 'GENE' in entity_type:
+                            entity_type = 'GENE'
+
+                        tokens_ = ['[' + entity_type + ']'] + tokens_
+
+                if word_idx in [x[1] - 1 for x in entity_ends_]:
+                    if entity_marker == 'asterisk':
+                        tokens_ = tokens_ + ['*']
+                    elif entity_marker == 'typed':
+                        idx = [x[1] - 1 for x in entity_ends_].index(word_idx)
+                        entity_type = entity_ends_[idx][0]
+
+                        if 'GENE' in entity_type:
+                            entity_type = 'GENE'
+
+                        tokens_ = tokens_ + ['[' + entity_type + ']']
+
+                tokens.extend(tokens_)
+                token_end = len(tokens)
+                token_span = list(range(token_start, token_end + 1))
+
+                word2token_span[word_idx] = token_span
+
+            # Convert word-level spans to token-level spans.
+            entity_positions = []
+            for entity_id, entity in entities.items():
+                for mention in entity:
+                    word_lvl_start = mention['start']
+                    word_lvl_end = mention['end']
+
+                    if word_lvl_end - word_lvl_start == 1:
+                        token_lvl_start = word2token_span[word_lvl_start][0]
+                        token_lvl_end = word2token_span[word_lvl_start][-1]
+                    elif word_lvl_end - word_lvl_start > 1:
+                        token_lvl_start = word2token_span[word_lvl_start][0]
+                        token_lvl_end = word2token_span[word_lvl_end - 1][-1]
+
+                    entity_positions.append([token_lvl_start, token_lvl_end])
+
+            # Build input IDs.
+            input_ids = tokenizer.convert_tokens_to_ids(tokens)
+            input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
+
+            feature = {'doc_id': doc_id,
+                       'input_ids': input_ids,
+                       'entity_positions': entity_positions,
+                       'head_tail_pairs': [pair],
+                       'labels': [label]}
+
+            features.append(feature)
+
+        # Finalize features.
+        # feature['doc_id'] = doc_id
+        # feature['input_ids'] = input_ids
+        # feature['entity_positions'] = entity_positions
+        # feature['head_tail_pairs'] = head_tail_pairs
+        # feature['labels'] = labels
+
+        # features.append(feature)
 
     print(f"Number of positive samples ({mode}): {num_positive_samples}")
     print(f"Number of negative samples ({mode}): {num_negative_samples}")
