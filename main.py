@@ -50,6 +50,7 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--dev_file', default='dev.json', type=str)
     parser.add_argument('--entity_marker', default='asterisk', type=str, choices=['asterisk', 'typed'])
+    parser.add_argument('--evaluation_step', default=250, type=int)
     parser.add_argument('--learning_rate', default=5e-5, type=float)
     parser.add_argument('--max_seq_len', default=512, type=str)
     parser.add_argument('--model_name_or_path', default='dmis-lab/biobert-v1.1', type=str)
