@@ -45,6 +45,7 @@ class Trainer():
             self.train_data = self.train_data[:100]
 
         self.batch_size = args.batch_size
+        self.evaluation_step = args.evaluation_step
         self.negative_ratio = args.negative_ratio
         self.num_epochs = args.num_epochs
         self.learning_rate = args.learning_rate
@@ -106,18 +107,20 @@ class Trainer():
 
                 wandb.log({'param_group1_lr': scheduler.get_last_lr()[0], 'param_group2_lr': scheduler.get_last_lr()[1]}, step=num_steps)
                 wandb.log({'loss': loss.item()}, step=num_steps)
+
+                if num_step % self.evaluation_step == 0:
+                    results, all_predictions, averaged_eval_loss = self.evaluate()
+                    wandb.log(results, step=num_steps)
+                    wandb.log({'eval_loss': averaged_eval_loss}, step=num_steps)
+
+                    if results['f1'] >= best_score:
+                        best_score = results['f1']
+                        torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/{self.wandb_name}.pt')
+
+                    with open(file=f'/hdd1/seokwon/BC7/predictions/{self.args.wandb_name}_predictions_step-{num_steps + 1}.json', mode='w') as f:
+                        json.dump(obj=all_predictions, fp=f, indent=2)
+
                 num_steps += 1
-
-            results, all_predictions, averaged_eval_loss = self.evaluate()
-            wandb.log(results, step=num_steps)
-            wandb.log({'eval_loss': averaged_eval_loss}, step=num_steps)
-
-            if results['f1'] >= best_score:
-                best_score = results['f1']
-                torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/{self.wandb_name}.pt')
-
-            with open(file=f'/hdd1/seokwon/BC7/predictions/{self.args.wandb_name}_predictions_epoch-{epoch + 1}.json', mode='w') as f:
-                json.dump(obj=all_predictions, fp=f, indent=2)
 
     def evaluate(self, mode='dev'):
         dev_features = convert_data_to_features(data=self.dev_data,
