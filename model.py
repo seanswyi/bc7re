@@ -44,7 +44,7 @@ class DrugProtREModel(nn.Module):
         self.head_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
         self.tail_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
 
-        if args.classifier_type == 'bilinear':
+        if (args.classifier_type == 'bilinear') and (args.classification_type != 'cls'):
             self.classifier = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
         elif (args.classifier_type == 'linear') and (args.classification_type == 'cls'):
             self.classifier = nn.Linear(in_features=config.hidden_size, out_features=args.num_labels)
@@ -217,7 +217,10 @@ class DrugProtREModel(nn.Module):
                 temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
                 representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
 
-        logits = self.classifier(representations)
+        try:
+            logits = self.classifier(representations)
+        except RuntimeError:
+            import pdb; pdb.set_trace()
 
         if self.use_at_loss:
             predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
