@@ -2,6 +2,7 @@ import logging
 import sys
 
 import numpy as np
+from opt_einsum import contract
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,6 +28,7 @@ class DrugProtREModel(nn.Module):
         self.max_seq_len = args.max_seq_len
         self.num_labels = args.num_labels
         self.use_at_loss = args.use_at_loss
+        self.use_attention = args.use_attention
 
         self.model = backbone_model
         self.tokenizer = tokenizer
@@ -39,8 +41,12 @@ class DrugProtREModel(nn.Module):
         elif not args.use_at_loss:
             self.loss_function = nn.CrossEntropyLoss()
 
-        self.head_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
-        self.tail_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
+        if args.use_attention:
+            self.head_extractor = nn.Linear(in_features=(2 * config.hidden_size), out_features=config.hidden_size)
+            self.tail_extractor = nn.Linear(in_features=(2 * config.hidden_size), out_features=config.hidden_size)
+        elif not args.use_attention:
+            self.head_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
+            self.tail_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
 
         if (args.classifier_type == 'bilinear') and (args.classification_type != 'cls'):
             self.classifier = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
@@ -48,6 +54,9 @@ class DrugProtREModel(nn.Module):
             self.classifier = nn.Linear(in_features=config.hidden_size, out_features=args.num_labels)
         elif (args.classifier_type == 'linear') and (args.classification_type == 'entity_marker'):
             self.classifier = nn.Linear(in_features=(config.hidden_size * 2), out_features=args.num_labels)
+
+        if args.use_attention and (args.classifier_type == 'linear'):
+            self.classifier = nn.Linear(in_features=(2 * config.hidden_size), out_features=args.num_labels)
 
     def encode(self, input_ids, attention_mask, start_tokens, end_tokens):
         _, seq_len = input_ids.shape
@@ -137,13 +146,15 @@ class DrugProtREModel(nn.Module):
 
         return encoded_output, attention
 
-    def get_representations(self, encoded_output, entity_positions, head_tail_pairs):
+    def get_representations(self, encoded_output, attention, entity_positions, head_tail_pairs):
         head_representations = []
         tail_representations = []
+        attention_representations = []
 
         for batch_idx, head_tail_pair in enumerate(head_tail_pairs):
             entities = entity_positions[batch_idx]
             encoded_text = encoded_output[batch_idx]
+            batch_attention = attention[batch_idx]
 
             for pair in head_tail_pair:
                 head_id = pair[0]
@@ -161,22 +172,29 @@ class DrugProtREModel(nn.Module):
                 head_representations.append(head_representation)
                 tail_representations.append(tail_representation)
 
+                head_attention = batch_attention[:, head_start + 1]
+                tail_attention = batch_attention[:, tail_start + 1]
+                head_tail_attention = (head_attention * tail_attention).mean(0)
+                attention_representation = contract('rl, ld -> rd', head_tail_attention.unsqueeze(0), encoded_text)
+
+                attention_representations.append(attention_representation)
+
         try:
-            return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0)
+            return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0), torch.cat(attention_representations, dim=0)
         except RuntimeError as e:
             logger.error(e)
             logger.error(f"head_representations = {head_representations}\ntail_representations = {tail_representations}")
             sys.exit()
 
     def get_label(self, logits, k=-1):
-        th_logit = logits[:, 0].unsqueeze(1)
+        no_relation_logit = logits[:, 0].unsqueeze(1)
         output = torch.zeros_like(logits).to(logits)
-        mask = (logits > th_logit)
+        mask = logits > no_relation_logit
 
         if k > 0:
             top_v, _ = torch.topk(logits, k, dim=1)
             top_v = top_v[:, -1]
-            mask = (logits >= top_v.unsqueeze(1)) & mask\
+            mask = (logits >= top_v.unsqueeze(1)) & mask
 
         output[mask] = 1.0
         output[:, 0] = (output.sum(1) == 0.).to(logits)
@@ -198,9 +216,14 @@ class DrugProtREModel(nn.Module):
 
             representations = torch.cat(representations, dim=0)
         elif self.classification_type == 'entity_marker':
-            heads, tails = self.get_representations(encoded_output=encoded_output,
-                                                    entity_positions=entity_positions,
-                                                    head_tail_pairs=head_tail_pairs)
+            heads, tails, attentions = self.get_representations(encoded_output=encoded_output,
+                                                                attention=attention,
+                                                                entity_positions=entity_positions,
+                                                                head_tail_pairs=head_tail_pairs)
+
+            if self.use_attention:
+                heads = torch.cat([heads, attentions], dim=-1)
+                tails = torch.cat([tails, attentions], dim=-1)
 
             if self.classifier_type == 'linear':
                 representations = torch.cat([heads, tails], dim=-1)
