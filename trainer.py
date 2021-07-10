@@ -43,6 +43,17 @@ class Trainer():
 
         if args.debug:
             self.train_data = self.train_data[:100]
+            self.dev_data = self.dev_data[:100]
+
+        self.train_features = convert_data_to_features(data=self.train_data,
+                                                       tokenizer=tokenizer,
+                                                       negative_ratio=args.negative_ratio,
+                                                       entity_marker=args.entity_marker)
+        self.dev_features = convert_data_to_features(data=self.dev_data,
+                                                     tokenizer=tokenizer,
+                                                     negative_ratio=args.negative_ratio,
+                                                     entity_marker=args.entity_marker,
+                                                     mode='dev')
 
         self.batch_size = args.batch_size
         self.evaluation_step = args.evaluation_step
@@ -68,11 +79,7 @@ class Trainer():
         return data
 
     def train(self,):
-        train_features = convert_data_to_features(data=self.train_data,
-                                                  tokenizer=self.tokenizer,
-                                                  negative_ratio=self.negative_ratio,
-                                                  entity_marker=self.entity_marker)
-        train_dataloader = DataLoader(train_features, batch_size=self.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=False)
+        train_dataloader = DataLoader(self.train_features, batch_size=self.batch_size, shuffle=True, collate_fn=collate_fn, drop_last=False)
 
         total_steps = int(len(train_dataloader) * self.num_epochs)
         warmup_steps = int(total_steps * self.warmup_ratio)
@@ -108,10 +115,12 @@ class Trainer():
                 wandb.log({'param_group1_lr': scheduler.get_last_lr()[0], 'param_group2_lr': scheduler.get_last_lr()[1]}, step=num_steps)
                 wandb.log({'loss': loss.item()}, step=num_steps)
 
-                if num_step % self.evaluation_step == 0:
+                if num_steps % self.evaluation_step == 0:
                     results, all_predictions, averaged_eval_loss = self.evaluate()
                     wandb.log(results, step=num_steps)
                     wandb.log({'eval_loss': averaged_eval_loss}, step=num_steps)
+
+                    print(f"Step {num_steps + 1} results: {results}")
 
                     if results['f1'] >= best_score:
                         best_score = results['f1']
@@ -123,15 +132,10 @@ class Trainer():
                 num_steps += 1
 
     def evaluate(self, mode='dev'):
-        dev_features = convert_data_to_features(data=self.dev_data,
-                                                tokenizer=self.tokenizer,
-                                                negative_ratio=self.negative_ratio,
-                                                entity_marker=self.entity_marker,
-                                                mode='dev')
-        dev_dataloader = DataLoader(dev_features, batch_size=self.batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
+        dev_dataloader = DataLoader(self.dev_features, batch_size=self.batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
 
-        with open(file='/hdd1/seokwon/BC7/dev_samples_with_negative2.json', mode='w') as f:
-            json.dump(obj=dev_features, fp=f, indent=2)
+        with open(file='/hdd1/seokwon/BC7/dev_samples_with_negative.json', mode='w') as f:
+            json.dump(obj=self.dev_features, fp=f, indent=2)
 
         total_eval_loss = 0
         preds = []
@@ -158,7 +162,7 @@ class Trainer():
 
         averaged_eval_loss = total_eval_loss / len(dev_dataloader)
         predictions = np.concatenate(preds, axis=0).astype(np.float32)
-        answers, all_predictions = self.convert_to_evaluation_features(predictions, dev_features)
+        answers, all_predictions = self.convert_to_evaluation_features(predictions, self.dev_features)
 
         if answers == []:
             precision = 0
