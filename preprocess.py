@@ -227,21 +227,11 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
 
         feature = {'doc_id': doc_id,
-                    'input_ids': input_ids,
-                    'entity_positions': entity_positions,
-                    'head_tail_pairs': head_tail_pairs,
-                    'labels': labels}
-
+                   'input_ids': input_ids,
+                   'entity_positions': entity_positions,
+                   'head_tail_pairs': head_tail_pairs,
+                   'labels': labels}
         features.append(feature)
-
-        # Finalize features.
-        # feature['doc_id'] = doc_id
-        # feature['input_ids'] = input_ids
-        # feature['entity_positions'] = entity_positions
-        # feature['head_tail_pairs'] = head_tail_pairs
-        # feature['labels'] = labels
-
-        # features.append(feature)
 
     print(f"Number of positive samples ({mode}): {num_positive_samples}")
     print(f"Number of negative samples ({mode}): {num_negative_samples}")
