@@ -65,6 +65,8 @@ if __name__ == '__main__':
 
     if 'biobert' in args.model_name_or_path:
         model_name = 'biobert'
+    elif 'roberta' in args.model_name_or_path.lower():
+        model_name = 'biolm'
 
     wandb_name = f'{model_name}_{args.classification_type}_{args.classifier_type}_{args.learning_rate}_{args.negative_ratio}'
 
