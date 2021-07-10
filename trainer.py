@@ -120,13 +120,13 @@ class Trainer():
                     wandb.log(results, step=num_steps)
                     wandb.log({'eval_loss': averaged_eval_loss}, step=num_steps)
 
-                    print(f"Step {num_steps + 1} results: {results}")
+                    print(f"Step {num_steps} results: {results}")
 
                     if results['f1'] >= best_score:
                         best_score = results['f1']
                         torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/{self.wandb_name}.pt')
 
-                    with open(file=f'/hdd1/seokwon/BC7/predictions/{self.args.wandb_name}_predictions_step-{num_steps + 1}.json', mode='w') as f:
+                    with open(file=f'/hdd1/seokwon/BC7/predictions/{self.args.wandb_name}_predictions_step-{num_steps}.json', mode='w') as f:
                         json.dump(obj=all_predictions, fp=f, indent=2)
 
                 num_steps += 1
