@@ -59,6 +59,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_labels', default=14, type=int)
     parser.add_argument('--train_file', default='train.json', type=str)
     parser.add_argument('--use_at_loss', action='store_true', default=False)
+    parser.add_argument('--use_attention', action='store_true', default=False)
     parser.add_argument('--warmup_ratio', default=0.05, type=float)
 
     args = parser.parse_args()
