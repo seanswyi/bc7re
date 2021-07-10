@@ -28,7 +28,7 @@ def main(args):
     new_layer = ['extractor', 'classifier']
     optimizer_grouped_parameters = [
         {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in new_layer)], },
-        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], 'lr': 1e-4},
+        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], 'lr': 1e-5},
     ]
     optimizer = optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     # optimizer = optim.Adam(params=model.parameters(), lr=args.learning_rate)
@@ -55,11 +55,11 @@ if __name__ == '__main__':
     parser.add_argument('--max_seq_len', default=512, type=str)
     parser.add_argument('--model_name_or_path', default='dmis-lab/biobert-v1.1', type=str)
     parser.add_argument('--negative_ratio', default=0.5, type=float)
-    parser.add_argument('--num_epochs', default=10, type=int)
+    parser.add_argument('--num_epochs', default=30, type=int)
     parser.add_argument('--num_labels', default=14, type=int)
     parser.add_argument('--train_file', default='train.json', type=str)
     parser.add_argument('--use_at_loss', action='store_true', default=False)
-    parser.add_argument('--warmup_ratio', default=0.01, type=float)
+    parser.add_argument('--warmup_ratio', default=0.05, type=float)
 
     args = parser.parse_args()
 
