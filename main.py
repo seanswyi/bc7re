@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import torch.nn as nn
 import torch.optim as optim
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 import wandb
@@ -23,6 +24,7 @@ def main(args):
         backbone_model.resize_token_embeddings(len(tokenizer))
 
     model = DrugProtREModel(args=args, config=config, backbone_model=backbone_model, tokenizer=tokenizer)
+    # model = nn.DataParallel(model)
     model = model.to('cuda')
 
     new_layer = ['extractor', 'classifier']
@@ -73,6 +75,9 @@ if __name__ == '__main__':
 
     if args.use_at_loss:
         wandb_name = 'AT_' + wandb_name
+
+    if args.use_attention:
+        wandb_name = wandb_name.replace('AT_', 'ATLOP_')
 
     args.wandb_name = wandb_name
     wandb.init(project='BC7DP', name=wandb_name)
