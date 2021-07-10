@@ -1,3 +1,4 @@
+import logging
 import sys
 
 import numpy as np
@@ -8,10 +9,7 @@ import torch.nn.functional as F
 from at_loss import ATLoss
 
 
-class EmptyHeadTailException(Exception):
-    def __init__(self, message="Empty head and tail pair."):
-        super().__init__(message)
-        pass
+logger = logging.getLogger()
 
 
 class DrugProtREModel(nn.Module):
@@ -50,10 +48,6 @@ class DrugProtREModel(nn.Module):
             self.classifier = nn.Linear(in_features=config.hidden_size, out_features=args.num_labels)
         elif (args.classifier_type == 'linear') and (args.classification_type == 'entity_marker'):
             self.classifier = nn.Linear(in_features=(config.hidden_size * 2), out_features=args.num_labels)
-
-        # self.bilinear = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
-        # self.cls_linear = nn.Linear(in_features=config.hidden_size, out_features=args.num_labels)
-        # self.linear = nn.Linear(in_features=(config.hidden_size * 2), out_features=args.num_labels)
 
     def encode(self, input_ids, attention_mask, start_tokens, end_tokens):
         _, seq_len = input_ids.shape
@@ -169,8 +163,9 @@ class DrugProtREModel(nn.Module):
 
         try:
             return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0)
-        except EmptyHeadTailException():
-            print(f"head_representations = {head_representations}\ntail_representations = {tail_representations}")
+        except RuntimeError as e:
+            logger.error(e)
+            logger.error(f"head_representations = {head_representations}\ntail_representations = {tail_representations}")
             sys.exit()
 
     def get_label(self, logits, k=-1):
@@ -217,10 +212,7 @@ class DrugProtREModel(nn.Module):
                 temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
                 representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
 
-        try:
-            logits = self.classifier(representations)
-        except RuntimeError:
-            import pdb; pdb.set_trace()
+        logits = self.classifier(representations)
 
         if self.use_at_loss:
             predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
