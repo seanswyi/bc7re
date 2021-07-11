@@ -1,7 +1,6 @@
 import argparse
 import os
 
-import torch.nn as nn
 import torch.optim as optim
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 import wandb
@@ -24,7 +23,6 @@ def main(args):
         backbone_model.resize_token_embeddings(len(tokenizer))
 
     model = DrugProtREModel(args=args, config=config, backbone_model=backbone_model, tokenizer=tokenizer)
-    # model = nn.DataParallel(model)
     model = model.to('cuda')
 
     new_layer = ['extractor', 'classifier']
@@ -33,7 +31,6 @@ def main(args):
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], 'lr': 1e-5},
     ]
     optimizer = optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    # optimizer = optim.Adam(params=model.parameters(), lr=args.learning_rate)
 
     trainer = Trainer(args=args, config=config, model=model, optimizer=optimizer, tokenizer=tokenizer)
     trainer.train()
@@ -46,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--adaptive_thresholding_k', default=1, type=int)
     parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--bilinear_block_size', default=64, type=int)
+    parser.add_argument('--checkpoint_save_dir', default='/hdd1/seokwon/BC7/checkpoints', type=str)
     parser.add_argument('--classification_type', default='entity_marker', choices=['cls', 'entity_marker'])
     parser.add_argument('--classifier_type', default='bilinear', choices=['linear', 'bilinear'])
     parser.add_argument('--data_dir', default='/hdd1/seokwon/data/BC7DP/drugprot-gs-training-development', type=str)
@@ -59,6 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('--negative_ratio', default=0.5, type=float)
     parser.add_argument('--num_epochs', default=30, type=int)
     parser.add_argument('--num_labels', default=14, type=int)
+    parser.add_argument('--pred_save_dir', default='/hdd1/seokwon/BC7/predictions', type=str)
     parser.add_argument('--train_file', default='train.json', type=str)
     parser.add_argument('--use_at_loss', action='store_true', default=False)
     parser.add_argument('--use_attention', action='store_true', default=False)
