@@ -1,4 +1,5 @@
 import json
+import os
 
 import numpy as np
 import torch
@@ -72,6 +73,15 @@ class Trainer():
 
         self.wandb_name = args.wandb_name
 
+        self.checkpoint_save_dir = os.path.join(args.checkpoint_save_dir, args.wandb_name)
+        self.pred_save_dir = os.path.join(args.pred_save_dir, args.wandb_name)
+
+        if not os.path.exists(self.checkpoint_save_dir):
+            os.makedirs(self.checkpoint_save_dir, exist_ok=True)
+
+        if not os.path.exists(self.pred_save_dir):
+            os.makedirs(self.pred_save_dir, exist_ok=True)
+
     def load_data(self, filepath):
         with open(file=filepath) as f:
             data = json.load(fp=f)
@@ -124,10 +134,15 @@ class Trainer():
 
                     if results['f1'] >= best_score:
                         best_score = results['f1']
-                        torch.save(self.model.state_dict(), f'/hdd1/seokwon/BC7/checkpoints/{self.wandb_name}.pt')
 
-                    with open(file=f'/hdd1/seokwon/BC7/predictions/{self.args.wandb_name}_predictions_step-{num_steps}.json', mode='w') as f:
-                        json.dump(obj=all_predictions, fp=f, indent=2)
+                        checkpoint_file = f'{self.wandb_name}.pt'
+                        checkpoint_filename = os.path.join(self.checkpoint_save_dir, checkpoint_file)
+                        torch.save(self.model.state_dict(), checkpoint_filename)
+
+                        pred_file = f'{self.wandb_name}_preds_step-{num_steps}.json'
+                        pred_filename = os.path.join(self.pred_save_dir, pred_file)
+                        with open(file=pred_filename, mode='w') as f:
+                            json.dump(obj=all_predictions, fp=f, indent=2)
 
                 num_steps += 1
 
