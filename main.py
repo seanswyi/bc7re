@@ -53,7 +53,8 @@ if __name__ == '__main__':
     parser.add_argument('--evaluation_step', default=250, type=int)
     parser.add_argument('--learning_rate', default=5e-5, type=float)
     parser.add_argument('--max_seq_len', default=512, type=str)
-    parser.add_argument('--model_name_or_path', default='dmis-lab/biobert-v1.1', type=str)
+    parser.add_argument('--model_name_or_path', default='dmis-lab/biobert-v1.1', type=str, \
+        choices=['dmis-lab/biobert-v1.1', '/hdd1/seokwon/BC7/checkpoints/RoBERTa-base-PM-M3-Voc-distill/'])
     parser.add_argument('--negative_ratio', default=0.5, type=float)
     parser.add_argument('--num_epochs', default=30, type=int)
     parser.add_argument('--num_labels', default=14, type=int)
