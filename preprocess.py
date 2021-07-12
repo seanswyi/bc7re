@@ -142,7 +142,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
 
                 num_positive_samples += 1
             else:
-                if negative_count == total_num_negative:
+                if (mode == 'train') and (negative_count == total_num_negative):
                     continue
 
                 relation[0] = 1
