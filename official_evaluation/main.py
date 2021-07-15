@@ -11,12 +11,12 @@ import warnings
 
 import pandas as pd
 
-import compute_metrics
-from utils import format_relations, get_chemical_gene_combinations, load_entities_dict, prepro_relations
+from compute_metrics import compute_metrics
+from utils import format_relations, get_chemical_gene_combinations, load_entities_dict, preprocess_data
 
 
 def warning_on_one_line(message, category, filename, lineno, file=None, line=None):
-    return '%s:%s: %s: %s\n' % (filename, lineno, category.__name__, message)\
+    return '%s:%s: %s: %s\n' % (filename, lineno, category.__name__, message)
 
 
 warnings.formatwarning = warning_on_one_line
@@ -28,7 +28,7 @@ def parse_arguments():
     '''
     parser = argparse.ArgumentParser(description='process user given parameters')
     parser.add_argument('-g', '--gs_path', required=False, dest='gs_path', default='/hdd1/seokwon/data/BC7DP/drugprot-gs-training-development/development', help='path to GS relations file (TSV)')
-    parser.add_argument('-e', '--ent_path', required=False, dest='ent_path', default='../gs-data/gs_entities.tsv', help='path to GS entities file (TSV)')
+    parser.add_argument('-e', '--entity_path', required=False, dest='entity_path', default='../gs-data/gs_entities.tsv', help='path to GS entities file (TSV)')
     parser.add_argument('-p', '--pred_path', required=False, dest='pred_path', default='../toy-data/pred_relations.tsv', help='path to predictions file (TSV)')
     parser.add_argument('--pmids', required=False, dest='pmids', default='../gs-data/pmids.txt', help='path to list of valid pubmed IDs. One PMID per line')
 
@@ -55,50 +55,53 @@ def main(args):
     -------
     None.
     '''
-    rel_types = ['INDIRECT-DOWNREGULATOR',
-                 'INDIRECT-UPREGULATOR',
-                 'DIRECT-REGULATOR',
-                 'ACTIVATOR',
-                 'INHIBITOR',
-                 'AGONIST',
-                 'AGONIST-ACTIVATOR',
-                 'AGONIST-INHIBITOR',
-                 'ANTAGONIST',
-                 'PRODUCT-OF',
-                 'SUBSTRATE',
-                 'SUBSTRATE_PRODUCT-OF',
-                 'PART-OF']
+    relation_names = ['INDIRECT-DOWNREGULATOR',
+                      'INDIRECT-UPREGULATOR',
+                      'DIRECT-REGULATOR',
+                      'ACTIVATOR',
+                      'INHIBITOR',
+                      'AGONIST',
+                      'AGONIST-ACTIVATOR',
+                      'AGONIST-INHIBITOR',
+                      'ANTAGONIST',
+                      'PRODUCT-OF',
+                      'SUBSTRATE',
+                      'SUBSTRATE_PRODUCT-OF',
+                      'PART-OF']
 
-    reltype2tag = {name: idx + 1 for idx, name in enumerate(rel_types)}
-    NREL = len(reltype2tag)
+    relname2tag = {name: idx + 1 for idx, name in enumerate(relation_names)}
+    num_relations = len(relname2tag)
 
-    # Load GS
+    # Load basic data.
     print("Loading GS files...")
-    _dict_, genes, chemicals = load_entities_dict(args.ent_path)
-    combinations, NCOMB = get_chemical_gene_combinations(_dict_)
+    pmid2chemicals_and_genes, _, chemicals = load_entities_dict(args.entity_path)
+    pmid2combinations, num_combinations = get_chemical_gene_combinations(pmid2chemicals_and_genes)
     pmids = set(map(lambda x: str(x.strip()), open(args.pmids)))
-    gs = pd.read_csv(args.gs_path, sep='\t', header=None, dtype=str, skip_blank_lines=True,
-                     names = ['pmid', 'rel_type', 'arg1', 'arg2'], encoding = 'utf-8')
 
-    # Load predictions
+    # Load GS data.
+    gs = pd.read_csv(args.gs_path, sep='\t', header=None, dtype=str, skip_blank_lines=True, names=['pmid', 'rel_type', 'arg1', 'arg2'], encoding='utf-8')
+
+    # Load predictions.
     print("Loading prediction files...")
-    pred = pd.read_csv(args.pred_path, sep='\t', header=None, dtype=str, skip_blank_lines=True,
-                       names = ['pmid', 'rel_type', 'arg1', 'arg2'], encoding = 'utf-8')
+    preds = pd.read_csv(args.pred_path, sep='\t', header=None, dtype=str, skip_blank_lines=True, names=['pmid', 'rel_type', 'arg1', 'arg2'], encoding='utf-8')
 
     # Format data
     print("Checking GS files...")
-    gs_valid,gs_rel_list = prepro_relations(gs, chemicals, rel_types, is_gs=True)
+    gs_valid, gs_rel_list = preprocess_data(df=gs, chemicals=chemicals, rel_types=relation_names, is_gs=True)
 
     print("Checking Predictions files...")
-    pred_valid,pred_rel_list = prepro_relations(pred, chemicals, rel_types, is_gs=False, gs_files=pmids)
+    preds_valid, preds_rel_list = preprocess_data(df=preds, chemicals=chemicals, rel_types=relation_names, gs_files=pmids)
 
-    print("Formatting data...")
-    y_true, y_pred = format_relations(gs_valid, pred_valid, combinations,
-                                      NCOMB, NREL, reltype2tag)
+    y_true, y_pred = format_relations(gs_valid=gs_valid,
+                                      preds_valid=preds_valid,
+                                      pmid2combinations=pmid2combinations,
+                                      num_combinations=num_combinations,
+                                      num_relations=num_relations,
+                                      relname2tag=relname2tag)
 
     # Compute metrics
     print("Computing DrugProt (BioCreative VII) metrics ...\n(p = Precision, r=Recall, f1 = F1 score)")
-    compute_metrics.main(y_true, y_pred, reltype2tag, gs_rel_list, pred_rel_list)
+    compute_metrics(y_true=y_true, y_pred=y_pred, relname2tag=relname2tag, gs_rel_list=gs_rel_list, preds_rel_list=preds_rel_list)
 
 
 if __name__ == '__main__':
@@ -110,7 +113,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.pred_path):
         raise Exception(f'Predictions path {args.pred_path} does not exist')
 
-    if not os.path.exists(args.ent_path):
+    if not os.path.exists(args.entity_path):
         raise Exception(f'Gold Standard entities path {args.ent_path} does not exist')
 
     if not os.path.exists(args.pmids):

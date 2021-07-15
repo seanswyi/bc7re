@@ -5,29 +5,40 @@ Created on Fri Jul  2 14:32:25 2021
 
 @author: antonio
 """
-import warnings
 import itertools
+import warnings
+
+from tqdm import tqdm
 
 
 def warning_on_one_line(message, category, filename, lineno, file=None, line=None):
     return '%s:%s: %s: %s\n' % (filename, lineno, category.__name__, message)
+
+
 warnings.formatwarning = warning_on_one_line
 
-def save_mark(chemicals, genes, ent_type, mark):
-    if ent_type=='CHEMICAL':
-        chemicals.append(mark)
-    elif ent_type=='GENE':
-        genes.append(mark)
+
+def save_entity_id(chemicals, genes, entity_type, entity_id):
+    if entity_type=='CHEMICAL':
+        chemicals.append(entity_id)
+    elif entity_type=='GENE':
+        genes.append(entity_id)
     else:
-        warnings.warn('Wrong Entity type')
+        warnings.warn("Wrong entity type.")
+
     return chemicals, genes
 
-def update_dict(chemicals, genes, pmid, _dict_):
-    _dict_this = {}
-    _dict_this['chemicals'] = chemicals
-    _dict_this['genes'] = genes
-    _dict_[pmid] = _dict_this
-    return _dict_
+
+def update_dict(chemicals, genes, pmid, input_dict):
+    temp_dict = {}
+
+    temp_dict['chemicals'] = chemicals
+    temp_dict['genes'] = genes
+
+    input_dict[pmid] = temp_dict
+
+    return input_dict
+
 
 def load_entities_dict(path):
     """
@@ -44,47 +55,44 @@ def load_entities_dict(path):
         dictionary with keys 'chemicals' and 'genes' and value the
         annotation mark
     """
-    _dict_ = {}
-    general_dict = {}
-    pmid_prev = ''
+    pmid2chemicals_and_genes = {}
+    pmid_entity_id2entity_type = {}
+    previous_pmid = ''
     chemicals = []
     genes = []
-    for line in open(path).readlines():
-        split = line.split('\t')
-        if (len(line.split('\t')) != 6) & (line!='\n'):
-            raise Exception(f"Line {line} in file {path} wrongly formatted")
-        pmid = split[0]
-        mark = split[1]
-        ent_type = split[2]
 
-        if pmid != pmid_prev:
-            # Save previous PMID
-            _dict_ = update_dict(chemicals, genes, pmid_prev, _dict_)
+    with open(file=path) as f:
+        lines = f.readlines()
 
-            # Initialize new PMID
-            chemicals = []
-            genes = []
+        for line in lines:
+            info = line.split('\t')
 
-        # Save entity
-        chemicals, genes = save_mark(chemicals, genes, ent_type, mark)
+            if (len(info) != 6) and (line != '\n'):
+                raise Exception(f"Line {line} in file {path} is wrongly formatted.")
 
-        # Update previous PMID
-        pmid_prev = pmid
+            pmid = info[0]
+            entity_id = info[1]
+            entity_type = info[2]
 
-        # Save General dict
-        general_dict[pmid + '-' + mark] = ent_type
+            if pmid != previous_pmid:
+                pmid2chemicals_and_genes = update_dict(chemicals=chemicals, genes=genes, pmid=previous_pmid, input_dict=pmid2chemicals_and_genes)
+                chemicals = []
+                genes = []
 
-    # Save last PMID
-    _dict_ = update_dict(chemicals, genes, pmid_prev, _dict_)
-    del _dict_['']
+            chemicals, genes = save_entity_id(chemicals=chemicals, genes=genes, entity_type=entity_type, entity_id=entity_id)
+            previous_pmid = pmid
+            pmid_entity_id2entity_type[pmid + '-' + entity_id] = entity_type
 
-    # Get list of genes and chemicals
-    genes = set([k for k,v in general_dict.items() if v=='GENE'])
-    chemicals = set([k for k,v in general_dict.items() if v=='CHEMICAL'])
+        pmid2chemicals_and_genes = update_dict(chemicals=chemicals, genes=genes, pmid=previous_pmid, input_dict=pmid2chemicals_and_genes)
+        del pmid2chemicals_and_genes[''] # Key for first `previous_pmid`.
 
-    return _dict_, genes, chemicals
+        genes = set(key for key, value in pmid_entity_id2entity_type.items() if value == 'GENE')
+        chemicals = set(key for key, value in pmid_entity_id2entity_type.items() if value == 'CHEMICAL')
 
-def get_chemical_gene_combinations(_dict_):
+        return pmid2chemicals_and_genes, genes, chemicals
+
+
+def get_chemical_gene_combinations(input_dict):
     """
     Parameters
     ----------
@@ -99,19 +107,21 @@ def get_chemical_gene_combinations(_dict_):
         PMIDs as keys, all possible CHEMICAL-GENE combinations are values.
     NCOMB : int
         DESCRIPTION.
-
     """
-
     combinations = {}
-    NCOMB = 0
-    for pmid, entities in _dict_.items():
+    num_combinations = 0
+
+    for pmid, entities in input_dict.items():
         chem = entities['chemicals']
         genes = entities['genes']
-        combinations[pmid] = list(itertools.product(chem, genes))
-        NCOMB = NCOMB + len(combinations[pmid] )
-    return combinations, NCOMB
 
-def prepro_relations(df, chemicals, rel_types, is_gs=False, gs_files=set()):
+        combinations[pmid] = list(itertools.product(chem, genes))
+        num_combinations += len(combinations[pmid])
+
+    return combinations, num_combinations
+
+
+def preprocess_data(df, chemicals, rel_types, is_gs=False, gs_files=None):
     """
     Preprocess annotations dataframe
 
@@ -137,11 +147,11 @@ def prepro_relations(df, chemicals, rel_types, is_gs=False, gs_files=set()):
     -------
     df : pandas DataFrame
         Clean annotations DataFrame.
-
     """
 
     if df.shape[0] == 0:
         raise Exception('There are not parsed annotations')
+
     if df.shape[1] != 4:
         raise Exception('Wrong column number in the annotations file')
 
@@ -149,40 +159,42 @@ def prepro_relations(df, chemicals, rel_types, is_gs=False, gs_files=set()):
     df = df.drop_duplicates(subset=df.columns).copy()
 
     # Remove predictions for RELATION FILES not valid
-    if len(set(df.rel_type.tolist()).intersection(set(rel_types))) > len(set(rel_types)):
-        warnings.warn("Non-valid relation types. Skipping them")
+    unique_input_relations = set(df.rel_type.tolist())
+    unique_relation_names = set(rel_types)
+
+    if len(unique_input_relations.intersection(unique_relation_names)) > len(unique_relation_names):
+        warnings.warn("Non-valid relations types exist. Skipping them.")
+
     df = df.loc[df['rel_type'].isin(rel_types),:].copy()
 
     # Remove predictions for PMIDs not valid
-    if is_gs==False:
-        df = df.loc[df['pmid'].isin(gs_files),:].copy()
+    if not is_gs:
+        df = df.loc[df['pmid'].isin(gs_files), :].copy()
 
     # Check every relation has one CHEMICAL and one GENE
     df['pmid-arg1'] = df['pmid'] + '-' + df['arg1'].apply(lambda x: x.split(':')[-1])
     df['pmid-arg2'] = df['pmid'] + '-' + df['arg2'].apply(lambda x: x.split(':')[-1])
     df['is_arg1_chemical'] = df['pmid-arg1'].apply(lambda x: x in chemicals)
     df['is_arg2_chemical'] = df['pmid-arg2'].apply(lambda x: x in chemicals)
+
     skip_chem = []
     skip_gene = []
+
     if any(df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) > 1):
-        skip_chem = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'],
-                               axis=1) > 1].index.tolist()
+        skip_chem = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) > 1].index.tolist()
         warnings.warn(f"The following lines have more than one CHEMICAL entity: {df.loc[skip_chem]}. Skipping them")
+
     if any(df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) == 0):
-        skip_gene = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'],
-                               axis=1) == 0].index.tolist()
+        skip_gene = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) == 0].index.tolist()
         warnings.warn(f"The following lines have less than one CHEMICAL entity: {df.loc[skip_gene]}. Skipping them")
+
     skip = skip_chem + skip_gene
-    if len(skip)>1:
+
+    if len(skip) > 1:
         df.drop(skip, inplace=True)
 
-
-    # Get final CHEMICAL and gene
-    # TODO: double-check this step has no errors
-    df['chemical'] = df.apply(lambda x: x['arg1'].split(':')[-1] \
-                              if x['is_arg1_chemical']==True else x['arg2'].split(':')[-1], axis=1)
-    df['gene'] = df.apply(lambda x: x['arg2'].split(':')[-1] \
-                              if x['is_arg1_chemical']==True else x['arg1'].split(':')[-1], axis=1)
+    df['chemical'] = df.apply(lambda x: x['arg1'].split(':')[-1] if x['is_arg1_chemical'] else x['arg2'].split(':')[-1], axis=1)
+    df['gene'] = df.apply(lambda x: x['arg2'].split(':')[-1] if x['is_arg1_chemical'] else x['arg1'].split(':')[-1], axis=1)
 
     # Keep only relevant columns
     df = df[['pmid', 'rel_type', 'chemical', 'gene']].drop_duplicates(subset=['pmid', 'rel_type', 'chemical', 'gene']).copy()
@@ -190,7 +202,7 @@ def prepro_relations(df, chemicals, rel_types, is_gs=False, gs_files=set()):
     return df, set(df.rel_type.tolist())
 
 
-def format_relations(gs_valid, pred_valid, combinations, NCOMB, NREL, reltype2tag):
+def format_relations(gs_valid, preds_valid, pmid2combinations, num_combinations, num_relations, relname2tag):
     """
     Format relation information for sklearn
 
@@ -215,36 +227,35 @@ def format_relations(gs_valid, pred_valid, combinations, NCOMB, NREL, reltype2ta
         List of GS relations.
     y_pred : nested lists
         List of Predictions relations.
-
     """
+    y_true = [[0] * num_combinations for _ in range(num_relations)]
+    y_pred = [[0] * num_combinations for _ in range(num_relations)]
+    current_idx = 0
 
-    y_true = [[0]*NCOMB for _ in range(NREL)]
-    y_pred = [[0]*NCOMB for _ in range(NREL)]
-    pos0 = 0
-    for pmid,combs in sorted(combinations.items()):
-        if combs==[]:
+    pbar = tqdm(iterable=sorted(pmid2combinations.items()), desc="Formatting data", total=len(pmid2combinations))
+    for pmid, combinations in pbar:
+        if combinations == []:
             continue
 
         # Subset GS and predictions
-        gs_this = gs_valid.loc[gs_valid['pmid']==pmid,:]
-        pred_this = pred_valid.loc[pred_valid['pmid']==pmid,:]
+        gs_relevant_pmid = gs_valid.loc[gs_valid['pmid'] == pmid, :]
+        pred_relevant_pmid = preds_valid.loc[preds_valid['pmid'] == pmid, :]
 
         # Iterate over all combinations
-        for c, idx in zip(combs, range(len(combs))):
-            chem = c[0]
-            gene = c[1]
+        for idx, combination in enumerate(combinations):
+            chemical = combination[0]
+            gene = combination[1]
 
-            gs_rel = gs_this.loc[(gs_this['chemical']==chem)&(gs_this['gene']==gene),
-                                   'rel_type'].values
-            if len(gs_rel)>0:
-                tag = reltype2tag[gs_rel[0]]
-                y_true[tag-1][pos0+idx]=1
+            gs_rel = gs_relevant_pmid.loc[(gs_relevant_pmid['chemical'] == chemical) & (gs_relevant_pmid['gene'] == gene), 'rel_type'].values
+            if len(gs_rel) > 0:
+                tag = relname2tag[gs_rel[0]]
+                y_true[tag - 1][current_idx + idx] = 1
 
-            pred_rel = pred_this.loc[(pred_this['chemical']==chem)&(pred_this['gene']==gene),
-                                   'rel_type'].values
-            if len(pred_rel)>0:
-                tag = reltype2tag[pred_rel[0]]
-                y_pred[tag-1][pos0+idx]=1
+            pred_rel = pred_relevant_pmid.loc[(pred_relevant_pmid['chemical'] == chemical) & (pred_relevant_pmid['gene'] == gene), 'rel_type'].values
+            if len(pred_rel) > 0:
+                tag = relname2tag[pred_rel[0]]
+                y_pred[tag - 1][current_idx + idx] = 1
 
-        pos0 = pos0+idx
+        current_idx += idx
+
     return y_true, y_pred
