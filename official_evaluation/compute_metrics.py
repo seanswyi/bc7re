@@ -5,9 +5,13 @@ Created on Thu Apr 29 15:32:08 2021
 
 @author: tonifuc3m
 """
+import logging
 import warnings
 
 from sklearn.metrics import confusion_matrix, f1_score, multilabel_confusion_matrix, precision_score, recall_score
+
+
+logger = logging.getLogger()
 
 
 def warning_on_one_line(message, category, filename, lineno, file=None, line=None):
@@ -41,7 +45,8 @@ def compute_metrics(y_true, y_pred, relname2tag, gs_rel_list, preds_rel_list):
     relations_not_in_gs = set(relname2tag.keys()) - set(gs_rel_list)
     relations_not_in_pred = set(relname2tag.keys()) - set(preds_rel_list)
 
-    print("By relation type")
+    logger.info("By relation type")
+    # print("By relation type")
     for relation_name, relation_id in relname2tag.items():
         if relation_name in relations_not_in_gs:
             continue
@@ -58,15 +63,23 @@ def compute_metrics(y_true, y_pred, relname2tag, gs_rel_list, preds_rel_list):
         # assert tp / (tp + fp + 1e-10) == precision, f"tp / (tp + fp) = {tp / (tp + fp)}\tprecision = {precision}"
         # assert tp / (tp + fn + 1e-10) == recall, f"tp / (tp + fp) = {tp / (tp + fn)}\tprecision = {recall}"
 
-        print(f"{relation_name}")
-        print(f"\tPrecision: {round(precision, 4)}\tRecall: {round(recall, 4)}\tF1: {round(f1, 4)}")
-        print(f"\tTP: {tp}\tFP: {fp}\tTN: {tn}\tFN: {fn}")
+        logger.info(f"{relation_name}")
+        logger.info(f"\tPrecision: {round(precision, 4)}\tRecall: {round(recall, 4)}\tF1: {round(f1, 4)}")
+        logger.info(f"\tTP: {tp}\tFP: {fp}\tTN: {tn}\tFN: {fn}\n")
+
+        # print(f"{relation_name}")
+        # print(f"\tPrecision: {round(precision, 4)}\tRecall: {round(recall, 4)}\tF1: {round(f1, 4)}")
+        # print(f"\tTP: {tp}\tFP: {fp}\tTN: {tn}\tFN: {fn}\n")
         # print(f"precision_{relation_name}: {round(precision, 4)}\nrecall_{relation_name}: {round(recall, 4)}\nf1_{relation_name}: {round(f1, 4)}\n")
 
-    print(f"The following relations are not present in the Gold Standard: {', '.join(relations_not_in_gs)}")
-    print(f"The following relations are not present in the Predictions: {', '.join(relations_not_in_pred)}")
+    logger.info(f"The following relations are not present in the Gold Standard: {', '.join(relations_not_in_gs)}")
+    logger.info(f"The following relations are not present in the Predictions: {', '.join(relations_not_in_pred)}")
 
-    print("\nGlobal results across all DrugProt relations (micro-average)")
+    # print(f"The following relations are not present in the Gold Standard: {', '.join(relations_not_in_gs)}")
+    # print(f"The following relations are not present in the Predictions: {', '.join(relations_not_in_pred)}")
+
+    logger.info("\nGlobal results across all DrugProt relations (micro-average)")
+    # print("\nGlobal results across all DrugProt relations (micro-average)")
 
     y_true_flattened = sum(y_true, [])
     y_pred_flattened = sum(y_pred, [])
@@ -79,8 +92,17 @@ def compute_metrics(y_true, y_pred, relname2tag, gs_rel_list, preds_rel_list):
     # assert tp / (tp + fp + 1e-10) == precision, f"tp / (tp + fp) = {tp / (tp + fp)}\tprecision = {precision}"
     # assert tp / (tp + fn + 1e-10) == recall, f"tp / (tp + fp) = {tp / (tp + fn)}\tprecision = {recall}"
 
-    print("Micro scores")
-    print(f"\tPrecision: {round(precision, 4)}\tRecall: {round(recall, 4)}\tF1: {round(f1, 4)}")
-    print(f"\tTP: {tp}\tFP: {fp}\tTN: {tn}\tFN: {fn}")
+    logger.info("Micro scores")
+    logger.info(f"\tPrecision: {round(precision, 4)}\tRecall: {round(recall, 4)}\tF1: {round(f1, 4)}")
+    logger.info(f"\tTP: {tp}\tFP: {fp}\tTN: {tn}\tFN: {fn}")
+    logger.info(f"\np_micro: {round(precision, 4)}\nr_micro: {round(recall, 4)}\nf1_micro: {round(f1, 4)}\n")
+
+    # print("Micro scores")
+    # print(f"\tPrecision: {round(precision, 4)}\tRecall: {round(recall, 4)}\tF1: {round(f1, 4)}")
+    # print(f"\tTP: {tp}\tFP: {fp}\tTN: {tn}\tFN: {fn}")
 
     # print(f"\np_micro: {round(precision, 4)}\nr_micro: {round(recall, 4)}\nf1_micro: {round(f1, 4)}\n")
+
+    result_dict = {'precision': precision, 'recall': recall, 'f1': f1, 'tp': tp, 'fp': fp, 'tn': tn, 'fn': fn}
+
+    return result_dict
