@@ -2,18 +2,51 @@ import json
 import os
 
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 from transformers.optimization import get_linear_schedule_with_warmup
 import wandb
 
+from official_evaluation.compute_metrics import compute_metrics
+from official_evaluation.utils import format_relations, get_chemical_gene_combinations, load_entities_dict, preprocess_data
 from preprocess import convert_data_to_features
 
 
 with open(file='/hdd1/seokwon/data/BC7DP/relation2id.json') as f:
     relation2id = json.load(fp=f)
-    id2relation = {id_: relation for relation, id_ in relation2id.items()}
+
+
+id2relation = {id_: relation for relation, id_ in relation2id.items()}
+relation_names = [x for x in relation2id if x != 'Na']
+relname2tag = {name: idx + 1 for idx, name in enumerate(relation_names)}
+num_true_relations = len(relation_names)
+
+
+def convert_to_df(data, mode='original'):
+    temp_data = []
+    for sample in data:
+        if mode == 'original':
+            pmid = sample['doc_id']
+
+            for label in sample['relations']:
+                relation_name = label['relation']
+                head_id = f"Arg:{label['head_id']}"
+                tail_id = f"Arg:{label['tail_id']}"
+
+                temp_data.append([pmid, relation_name, head_id, tail_id])
+        elif mode == 'preds':
+            pmid = sample['pmid']
+            relation_name = sample['relation']
+            head_id = f"Arg:{sample['head_id']}"
+            tail_id = f"Arg:{sample['tail_id']}"
+
+            temp_data.append([pmid, relation_name, head_id, tail_id])
+
+    data_df = pd.DataFrame(temp_data, columns=['pmid', 'rel_type', 'arg1', 'arg2'])
+
+    return data_df
 
 
 def collate_fn(batch):
@@ -41,6 +74,7 @@ class Trainer():
 
         self.train_data = self.load_data(filepath=args.train_file)
         self.dev_data = self.load_data(filepath=args.dev_file)
+        self.dev_df = convert_to_df(data=self.dev_data)
 
         if args.debug:
             self.train_data = self.train_data[:100]
@@ -57,20 +91,21 @@ class Trainer():
                                                      mode='dev')
 
         self.batch_size = args.batch_size
+        self.entity_marker = args.entity_marker
         self.evaluation_step = args.evaluation_step
         self.negative_ratio = args.negative_ratio
         self.num_epochs = args.num_epochs
         self.learning_rate = args.learning_rate
+        self.use_at_loss = args.use_at_loss
         self.warmup_ratio = args.warmup_ratio
 
-        self.entity_marker = args.entity_marker
-
-        self.use_at_loss = args.use_at_loss
+        self.entity_file = args.entity_file
 
         self.model = model
         self.optimizer = optimizer
         self.tokenizer = tokenizer
 
+        self.timestamp = args.timestamp
         self.wandb_name = args.wandb_name
 
         self.checkpoint_save_dir = os.path.join(args.checkpoint_save_dir, args.wandb_name)
@@ -135,14 +170,15 @@ class Trainer():
                     if results['f1'] >= best_score:
                         best_score = results['f1']
 
-                        checkpoint_file = f'{self.wandb_name}.pt'
-                        checkpoint_filename = os.path.join(self.checkpoint_save_dir, checkpoint_file)
-                        torch.save(self.model.state_dict(), checkpoint_filename)
+                        if not self.args.dont_save:
+                            checkpoint_file = f'{self.wandb_name}.pt'
+                            checkpoint_filename = os.path.join(self.checkpoint_save_dir, checkpoint_file)
+                            torch.save(self.model.state_dict(), checkpoint_filename)
 
-                        pred_file = f'{self.wandb_name}_preds_step-{num_steps}.json'
-                        pred_filename = os.path.join(self.pred_save_dir, pred_file)
-                        with open(file=pred_filename, mode='w') as f:
-                            json.dump(obj=all_predictions, fp=f, indent=2)
+                            pred_file = f'{self.wandb_name}_preds_step-{num_steps}.json'
+                            pred_filename = os.path.join(self.pred_save_dir, pred_file)
+                            with open(file=pred_filename, mode='w') as f:
+                                json.dump(obj=all_predictions, fp=f, indent=2)
 
                 num_steps += 1
 
@@ -178,47 +214,70 @@ class Trainer():
         averaged_eval_loss = total_eval_loss / len(dev_dataloader)
         predictions = np.concatenate(preds, axis=0).astype(np.float32)
         answers, all_predictions = self.convert_to_evaluation_features(predictions, self.dev_features)
+        answers_df = convert_to_df(data=answers, mode='preds')
 
-        if answers == []:
-            precision = 0
-            recall = 0
-            f1 = 0
-        else:
-            tp = 0
+        pmid2chemicals_and_genes, _, chemicals = load_entities_dict(path=self.entity_file)
+        pmid2combinations, num_combinations = get_chemical_gene_combinations(input_dict=pmid2chemicals_and_genes)
+        pmids = set(map(lambda x: str(x.strip()), [x['doc_id'] for x in self.dev_data]))
 
-            true_converted = []
-            for document in self.dev_data:
-                pmid = document['doc_id']
-                relations = document['relations']
+        true_valid, true_relation_list = preprocess_data(df=self.dev_df, chemicals=chemicals, rel_types=relation_names, is_gs=True)
+        answers_valid, answers_relation_list = preprocess_data(df=answers_df, chemicals=chemicals, rel_types=relation_names, gs_files=pmids)
 
-                for relation in relations:
-                    template = {'pmid': pmid, 'head_id': relation['head_id'], 'tail_id': relation['tail_id'], 'relation': relation['relation']}
-                    true_converted.append(template)
+        y_true, y_pred = format_relations(gs_valid=true_valid,
+                                          preds_valid=answers_valid,
+                                          pmid2combinations=pmid2combinations,
+                                          num_combinations=num_combinations,
+                                          num_relations=num_true_relations,
+                                          relname2tag=relname2tag)
 
-            positive_predictions = [x for x in answers if x['relation'] != 'Na']
-            tp_plus_fp = len(positive_predictions)
-            tp_plus_fn = len(true_converted)
+        result_dict = compute_metrics(y_true=y_true,
+                                      y_pred=y_pred,
+                                      relname2tag=relname2tag,
+                                      gs_rel_list=true_relation_list,
+                                      preds_rel_list=answers_relation_list)
 
-            for prediction in positive_predictions:
-                if prediction in true_converted:
-                    tp += 1
+        return result_dict, all_predictions, averaged_eval_loss
 
-            if tp_plus_fp == 0:
-                precision = 0
-            else:
-                precision = tp / tp_plus_fp
+        # if answers == []:
+        #     precision = 0
+        #     recall = 0
+        #     f1 = 0
+        # else:
+        #     tp = 0
 
-            if tp_plus_fn == 0:
-                recall = 0
-            else:
-                recall = tp / tp_plus_fn
+        #     true_converted = []
+        #     for document in self.dev_data:
+        #         pmid = document['doc_id']
+        #         relations = document['relations']
 
-            if precision + recall == 0:
-                f1 = 0
-            else:
-                f1 = 2 * (precision * recall) / (precision + recall)
+        #         for relation in relations:
+        #             template = {'pmid': pmid, 'head_id': relation['head_id'], 'tail_id': relation['tail_id'], 'relation': relation['relation']}
+        #             true_converted.append(template)
 
-        return {'precision': precision, 'recall': recall, 'f1': f1}, all_predictions, averaged_eval_loss
+        #     positive_predictions = [x for x in answers if x['relation'] != 'Na']
+        #     tp_plus_fp = len(positive_predictions)
+        #     tp_plus_fn = len(true_converted)
+
+        #     for prediction in positive_predictions:
+        #         if prediction in true_converted:
+        #             tp += 1
+
+        #     if tp_plus_fp == 0:
+        #         precision = 0
+        #     else:
+        #         precision = tp / tp_plus_fp
+
+        #     if tp_plus_fn == 0:
+        #         recall = 0
+        #     else:
+        #         recall = tp / tp_plus_fn
+
+        #     if precision + recall == 0:
+        #         f1 = 0
+        #     else:
+        #         f1 = 2 * (precision * recall) / (precision + recall)
+
+        # return {'precision': precision, 'recall': recall, 'f1': f1}, all_predictions, averaged_eval_loss
 
     def convert_to_evaluation_features(self, predictions, features):
         head_idxs = []
