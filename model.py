@@ -44,9 +44,11 @@ class DrugProtREModel(nn.Module):
         if args.use_attention:
             self.head_extractor = nn.Linear(in_features=(2 * config.hidden_size), out_features=config.hidden_size)
             self.tail_extractor = nn.Linear(in_features=(2 * config.hidden_size), out_features=config.hidden_size)
+            self.cls_extractor = nn.Linear(in_features=(2 * config.hidden_size), out_features=config.hidden_size)
         elif not args.use_attention:
             self.head_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
             self.tail_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
+            self.cls_extractor = nn.Linear(in_features=config.hidden_size, out_features=config.hidden_size)
 
         if (args.classifier_type == 'bilinear') and (args.classification_type != 'cls'):
             self.classifier = nn.Linear(in_features=(config.hidden_size * args.bilinear_block_size), out_features=args.num_labels)
@@ -150,11 +152,16 @@ class DrugProtREModel(nn.Module):
         head_representations = []
         tail_representations = []
         attention_representations = []
+        cls_representations = []
 
         for batch_idx, head_tail_pair in enumerate(head_tail_pairs):
             entities = entity_positions[batch_idx]
             encoded_text = encoded_output[batch_idx]
             batch_attention = attention[batch_idx]
+
+            cls_representation = encoded_text[0]
+            cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
+            cls_representations.append(cls_representation_tiled)
 
             for pair in head_tail_pair:
                 head_id = pair[0]
@@ -180,16 +187,21 @@ class DrugProtREModel(nn.Module):
                 attention_representations.append(attention_representation)
 
         try:
-            return torch.stack(head_representations, dim=0), torch.stack(tail_representations, dim=0), torch.cat(attention_representations, dim=0)
+            head_representations = torch.stack(head_representations, dim=0)
+            tail_representations = torch.stack(tail_representations, dim=0)
+            attention_representations = torch.cat(attention_representations, dim=0)
+            cls_representations = torch.cat(cls_representations, dim=0)
         except RuntimeError as e:
             logger.error(e)
             logger.error(f"head_representations = {head_representations}\ntail_representations = {tail_representations}")
             sys.exit()
 
+        return head_representations, tail_representations, attention_representations, cls_representations
+
     def get_label(self, logits, k=-1):
-        no_relation_logit = logits[:, 0].unsqueeze(1)
+        threshold_logit = logits[:, 0].unsqueeze(1)
         output = torch.zeros_like(logits).to(logits)
-        mask = logits > no_relation_logit
+        mask = logits > threshold_logit
 
         if k > 0:
             top_v, _ = torch.topk(logits, k, dim=1)
@@ -206,33 +218,39 @@ class DrugProtREModel(nn.Module):
         end_tokens = [self.sep_token_id]
 
         encoded_output, attention = self.encode(input_ids, attention_mask, start_tokens=start_tokens, end_tokens=end_tokens)
+        heads, tails, attentions, clss = self.get_representations(encoded_output=encoded_output,
+                                                                  attention=attention,
+                                                                  entity_positions=entity_positions,
+                                                                  head_tail_pairs=head_tail_pairs)
 
         if self.classification_type == 'cls':
-            representations = []
-            for batch_idx, pairs in enumerate(head_tail_pairs):
-                cls_representation = encoded_output[batch_idx][0]
-                cls_representation_tiled = cls_representation.repeat(repeats=(len(pairs), 1))
-                representations.append(cls_representation_tiled)
-
-            representations = torch.cat(representations, dim=0)
-        elif self.classification_type == 'entity_marker':
-            heads, tails, attentions = self.get_representations(encoded_output=encoded_output,
-                                                                attention=attention,
-                                                                entity_positions=entity_positions,
-                                                                head_tail_pairs=head_tail_pairs)
-
+            representations = clss
+        elif self.classification_type in ['both', 'entity_marker']:
             if self.use_attention:
                 heads = torch.cat([heads, attentions], dim=-1)
                 tails = torch.cat([tails, attentions], dim=-1)
+                clss = torch.cat([clss, attentions], dim=-1)
 
             if self.classifier_type == 'linear':
-                representations = torch.cat([heads, tails], dim=-1)
+                if self.classification_type == 'both':
+                    representations = torch.cat([clss, heads, tails], dim=-1)
+                elif self.clasification_type == 'entity_marker':
+                    representations = torch.cat([heads, tails], dim=-1)
             elif self.classifier_type == 'bilinear':
                 heads_extracted = self.head_extractor(heads)
                 tails_extracted = self.tail_extractor(tails)
 
-                temp1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
-                temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
+                if self.classification_type == 'both':
+                    cls_extracted = self.cls_extractor(clss)
+                    heads_extracted = torch.cat([heads_extracted, cls_extracted], dim=-1)
+                    tails_extracted = torch.cat([tails_extracted, cls_extracted], dim=-1)
+
+                    temp1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size * 2, self.bilinear_block_size)
+                    temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size * 2, self.bilinear_block_size)
+                elif self.classification_type == 'entity_marker':
+                    temp1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
+                    temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
+
                 representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
 
         logits = self.classifier(representations)
