@@ -4,6 +4,8 @@
 Created on Fri Jul  2 14:32:25 2021
 
 @author: antonio
+
+Modified by seanswyi.
 """
 import itertools
 import warnings
@@ -148,9 +150,11 @@ def preprocess_data(df, chemicals, rel_types, is_gs=False, gs_files=None):
     df : pandas DataFrame
         Clean annotations DataFrame.
     """
-
-    if df.shape[0] == 0:
-        raise Exception('There are not parsed annotations')
+    try:
+        if df.shape[0] == 0:
+            raise Exception('There are not parsed annotations')
+    except Exception:
+        import pdb; pdb.set_trace()
 
     if df.shape[1] != 4:
         raise Exception('Wrong column number in the annotations file')

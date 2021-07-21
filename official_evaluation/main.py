@@ -4,6 +4,8 @@
 Created on Thu Apr 29 15:32:08 2021
 
 @author: tonifuc3m
+
+Modified by seanswyi.
 """
 import argparse
 import os
@@ -114,7 +116,7 @@ if __name__ == '__main__':
         raise Exception(f'Predictions path {args.pred_path} does not exist')
 
     if not os.path.exists(args.entity_path):
-        raise Exception(f'Gold Standard entities path {args.ent_path} does not exist')
+        raise Exception(f'Gold Standard entities path {args.entity_path} does not exist')
 
     if not os.path.exists(args.pmids):
         raise Exception(f'PMIDs file list path {args.pmids} does not exist')
