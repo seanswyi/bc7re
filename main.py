@@ -56,7 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('--bilinear_block_size', default=64, type=int)
     parser.add_argument('--checkpoint_save_dir', default='/hdd1/seokwon/BC7/checkpoints', type=str)
     parser.add_argument('--classifier_learning_rate', default=1e-5, type=float)
-    parser.add_argument('--classification_type', default='entity_marker', choices=['cls', 'entity_marker'])
+    parser.add_argument('--classification_type', default='entity_marker', choices=['both', 'cls', 'entity_marker'])
     parser.add_argument('--classifier_type', default='bilinear', choices=['linear', 'bilinear'])
     parser.add_argument('--data_dir', default='/hdd1/seokwon/data/BC7DP/drugprot-gs-training-development', type=str)
     parser.add_argument('--debug', action='store_true', default=False)
