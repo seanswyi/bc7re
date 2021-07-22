@@ -28,7 +28,7 @@ def convert_to_df(data, mode='original'):
     temp_data = []
     for sample in data:
         if mode == 'original':
-            pmid = sample['doc_id']
+            pmid = sample['pmid']
 
             for label in sample['relations']:
                 relation_name = label['relation']
@@ -218,7 +218,7 @@ class Trainer():
 
         pmid2chemicals_and_genes, _, chemicals = load_entities_dict(path=self.entity_file)
         pmid2combinations, num_combinations = get_chemical_gene_combinations(input_dict=pmid2chemicals_and_genes)
-        pmids = set(map(lambda x: str(x.strip()), [x['doc_id'] for x in self.dev_data]))
+        pmids = set(map(lambda x: str(x.strip()), [x['pmid'] for x in self.dev_data]))
 
         true_valid, true_relation_list = preprocess_data(df=self.dev_df, chemicals=chemicals, rel_types=relation_names, is_gs=True)
         answers_valid, answers_relation_list = preprocess_data(df=answers_df, chemicals=chemicals, rel_types=relation_names, gs_files=pmids)
@@ -238,51 +238,10 @@ class Trainer():
 
         return result_dict, all_predictions, averaged_eval_loss
 
-        # if answers == []:
-        #     precision = 0
-        #     recall = 0
-        #     f1 = 0
-        # else:
-        #     tp = 0
-
-        #     true_converted = []
-        #     for document in self.dev_data:
-        #         pmid = document['doc_id']
-        #         relations = document['relations']
-
-        #         for relation in relations:
-        #             template = {'pmid': pmid, 'head_id': relation['head_id'], 'tail_id': relation['tail_id'], 'relation': relation['relation']}
-        #             true_converted.append(template)
-
-        #     positive_predictions = [x for x in answers if x['relation'] != 'Na']
-        #     tp_plus_fp = len(positive_predictions)
-        #     tp_plus_fn = len(true_converted)
-
-        #     for prediction in positive_predictions:
-        #         if prediction in true_converted:
-        #             tp += 1
-
-        #     if tp_plus_fp == 0:
-        #         precision = 0
-        #     else:
-        #         precision = tp / tp_plus_fp
-
-        #     if tp_plus_fn == 0:
-        #         recall = 0
-        #     else:
-        #         recall = tp / tp_plus_fn
-
-        #     if precision + recall == 0:
-        #         f1 = 0
-        #     else:
-        #         f1 = 2 * (precision * recall) / (precision + recall)
-
-        # return {'precision': precision, 'recall': recall, 'f1': f1}, all_predictions, averaged_eval_loss
-
     def convert_to_evaluation_features(self, predictions, features):
         head_idxs = []
         tail_idxs = []
-        doc_ids = []
+        pmids = []
 
         all_results = []
 
@@ -290,7 +249,7 @@ class Trainer():
             head_tail_pairs = feature['head_tail_pairs']
             head_idxs += [('T' + str(pair[0] + 1)) for pair in head_tail_pairs]
             tail_idxs += [('T' + str(pair[1] + 1)) for pair in head_tail_pairs]
-            doc_ids += [feature['doc_id'] for pair in head_tail_pairs]
+            pmids += [feature['pmid'] for pair in head_tail_pairs]
 
         results = []
         for idx, prediction in enumerate(predictions):
@@ -298,7 +257,7 @@ class Trainer():
                 prediction = np.nonzero(prediction)[0].tolist()
 
                 for pred in prediction:
-                    result_dict = {'pmid': doc_ids[idx],
+                    result_dict = {'pmid': pmids[idx],
                                    'head_id': head_idxs[idx],
                                    'tail_id': tail_idxs[idx],
                                    'relation': id2relation[pred]}
@@ -310,7 +269,7 @@ class Trainer():
             else:
                 prediction = int(predictions[idx])
 
-                result_dict = {'pmid': doc_ids[idx],
+                result_dict = {'pmid': pmids[idx],
                                'head_id': head_idxs[idx],
                                'tail_id': tail_idxs[idx],
                                'relation': id2relation[prediction]}
