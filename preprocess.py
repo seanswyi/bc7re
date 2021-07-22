@@ -5,6 +5,7 @@ import json
 import math
 import os
 
+import stanza
 from tqdm import tqdm
 
 
@@ -24,7 +25,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                    'entity_positions': [],
                    'labels': []}
 
-        doc_id = sample['doc_id']
+        doc_id = sample['pmid']
         title = sample['title']
         context = sample['context']
         text = ' '.join([title, context])
@@ -226,7 +227,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
 
-        feature = {'doc_id': doc_id,
+        feature = {'pmid': doc_id,
                    'input_ids': input_ids,
                    'entity_positions': entity_positions,
                    'head_tail_pairs': head_tail_pairs,
@@ -247,12 +248,12 @@ def read_tsv(filename):
     return data
 
 
-def aggregate_data(abstracts, entities, relations=None, mode='train'):
+def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='train'):
     data = []
 
     pbar = tqdm(iterable=abstracts, desc=f"Aggregating data for {mode}", total=len(abstracts))
     for document in pbar:
-        template = {'doc_id': str,
+        template = {'pmid': str,
                     'title': str,
                     'context': str,
                     'entities': {},
@@ -262,7 +263,16 @@ def aggregate_data(abstracts, entities, relations=None, mode='train'):
         title = document[1]
         context = document[2]
 
-        template['doc_id'] = doc_id
+        full_text = ' '.join([title, context])
+        stanza_output = stanza_pipeline(full_text)
+
+        sentenceid2charspan = {}
+        for idx, sentence in enumerate(stanza_output.sentences):
+            start_char = sentence.words[0].misc.split('|')[0].split('=')[-1]
+            end_char = sentence.words[-1].misc.split('|')[-1].split('=')[-1]
+            sentenceid2charspan[idx] = list(range(int(start_char), int(end_char) + 1))
+
+        template['pmid'] = doc_id
         template['title'] = title
         template['context'] = context
 
@@ -272,11 +282,16 @@ def aggregate_data(abstracts, entities, relations=None, mode='train'):
         for entity in doc_entities:
             entity_id = entity[1]
             entity_type = entity[2]
-            entity_start = entity[3]
-            entity_end = entity[4]
+            entity_start = int(entity[3])
+            entity_end = int(entity[4])
             entity_name = entity[5]
 
-            entity_template = {'type': entity_type, 'name': entity_name, 'start': int(entity_start), 'end': int(entity_end)}
+            for sentence_id, positions in sentenceid2charspan.items():
+                if entity_start in positions:
+                    entity_sentence_id = sentence_id
+                    break
+
+            entity_template = {'type': entity_type, 'name': entity_name, 'start': int(entity_start), 'end': int(entity_end), 'sentence_id': entity_sentence_id}
 
             try:
                 template['entities'][entity_id].append(entity_template)
@@ -297,6 +312,9 @@ def aggregate_data(abstracts, entities, relations=None, mode='train'):
 
 
 def main(args):
+    stanza.download('en', package='craft')
+    stanza_pipeline = stanza.Pipeline('en', package='craft')
+
     train_dir = os.path.join(args.data_dir, 'training')
     dev_dir = os.path.join(args.data_dir, 'development')
 
@@ -316,8 +334,8 @@ def main(args):
     dev_entities = read_tsv(filename=dev_entities_file)
     dev_relations = read_tsv(filename=dev_relations_file)
 
-    train_data = aggregate_data(abstracts=train_abstracts, entities=train_entities, relations=train_relations)
-    dev_data = aggregate_data(abstracts=dev_abstracts, entities=dev_entities, relations=dev_relations)
+    train_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=train_abstracts, entities=train_entities, relations=train_relations)
+    dev_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=dev_abstracts, entities=dev_entities, relations=dev_relations)
 
     train_save_file = os.path.join(train_dir, 'train.json')
     with open(file=train_save_file, mode='w') as f:
