@@ -62,7 +62,9 @@ def collate_fn(batch):
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     attention_mask = torch.tensor(attention_mask, dtype=torch.float)
 
-    output = (input_ids, attention_mask, entity_positions, head_tail_pairs, labels)
+    entity_set = [x['entity_set'] for x in batch]
+
+    output = (input_ids, attention_mask, entity_positions, entity_set, head_tail_pairs, labels)
 
     return output
 
@@ -135,18 +137,19 @@ class Trainer():
         best_score = 0
         num_steps = 0
         epoch_pbar = trange(self.num_epochs, desc="Epoch", total=self.num_epochs)
-        for epoch in epoch_pbar:
+        for _ in epoch_pbar:
             self.model.zero_grad()
 
             train_pbar = tqdm(iterable=train_dataloader, desc="Training", total=len(train_dataloader))
-            for step, batch in enumerate(train_pbar):
+            for batch in train_pbar:
                 self.model.train()
 
                 inputs = {'input_ids': batch[0].to('cuda'),
                           'attention_mask': batch[1].to('cuda'),
                           'entity_positions': batch[2],
-                          'head_tail_pairs': batch[3],
-                          'labels': batch[4]}
+                          'entity_set': batch[3],
+                          'head_tail_pairs': batch[4],
+                          'labels': batch[5]}
 
                 outputs = self.model(**inputs)
 
