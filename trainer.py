@@ -200,7 +200,8 @@ class Trainer():
             inputs = {'input_ids': batch[0].to('cuda'),
                       'attention_mask': batch[1].to('cuda'),
                       'entity_positions': batch[2],
-                      'head_tail_pairs': batch[3]}
+                      'entity_set': batch[3],
+                      'head_tail_pairs': batch[4]}
 
             if mode == 'dev':
                 inputs['labels'] = batch[4]
