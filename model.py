@@ -150,7 +150,7 @@ class DrugProtREModel(nn.Module):
 
         return encoded_output, attention
 
-    def get_representations(self, encoded_output, attention, entity_positions, head_tail_pairs):
+    def get_representations(self, encoded_output, attention, entity_positions, entity_set, head_tail_pairs):
         head_representations = []
         tail_representations = []
         attention_representations = []
@@ -160,6 +160,7 @@ class DrugProtREModel(nn.Module):
             entities = entity_positions[batch_idx]
             encoded_text = encoded_output[batch_idx]
             batch_attention = attention[batch_idx]
+            batch_entity_set = entity_set[batch_idx]
 
             cls_representation = encoded_text[0]
             cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
@@ -169,17 +170,45 @@ class DrugProtREModel(nn.Module):
                 head_id = pair[0]
                 tail_id = pair[1]
 
+                head_mentions = []
+                tail_mentions = []
+                for mentions in batch_entity_set:
+                    if (head_mentions == []) and (head_id in mentions):
+                        head_mentions = mentions
+
+                    if (tail_mentions == []) and (tail_id in mentions):
+                        tail_mentions = mentions
+
+                temp_head_representations = []
+                temp_tail_representations = []
+
+                for mention in head_mentions:
+                    position = entities[mention]
+                    indexed_text = encoded_text[position[0] + 1]
+                    temp_head_representations.append(indexed_text)
+
+                for mention in tail_mentions:
+                    position = entities[mention]
+                    indexed_text = encoded_text[position[0] + 1]
+                    temp_tail_representations.append(indexed_text)
+
+                temp_head_representations = torch.stack(temp_head_representations, dim=0)
+                temp_tail_representations = torch.stack(temp_tail_representations, dim=0)
+
+                temp_head_representation = torch.logsumexp(temp_head_representations, dim=0)
+                temp_tail_representation = torch.logsumexp(temp_tail_representations, dim=0)
+
                 head_entities = entities[head_id]
                 tail_entities = entities[tail_id]
 
                 head_start = head_entities[0]
                 tail_start = tail_entities[0]
 
-                head_representation = encoded_text[head_start + 1]
-                tail_representation = encoded_text[tail_start + 1]
+                # head_representation = encoded_text[head_start + 1]
+                # tail_representation = encoded_text[tail_start + 1]
 
-                head_representations.append(head_representation)
-                tail_representations.append(tail_representation)
+                head_representations.append(temp_head_representation)
+                tail_representations.append(temp_tail_representation)
 
                 head_attention = batch_attention[:, head_start + 1]
                 tail_attention = batch_attention[:, tail_start + 1]
@@ -215,7 +244,7 @@ class DrugProtREModel(nn.Module):
 
         return output
 
-    def forward(self, input_ids, attention_mask, entity_positions, head_tail_pairs, labels=None):
+    def forward(self, input_ids, attention_mask, entity_positions, entity_set, head_tail_pairs, labels=None):
         start_tokens = [self.cls_token_id]
         end_tokens = [self.sep_token_id]
 
@@ -223,6 +252,7 @@ class DrugProtREModel(nn.Module):
         heads, tails, attentions, clss = self.get_representations(encoded_output=encoded_output,
                                                                   attention=attention,
                                                                   entity_positions=entity_positions,
+                                                                  entity_set=entity_set,
                                                                   head_tail_pairs=head_tail_pairs)
 
         if self.classification_type == 'cls':
