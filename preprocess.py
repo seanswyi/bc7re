@@ -34,6 +34,9 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         relations = sample['relations']
         pair2relation = {(x['head_id'], x['tail_id']): x['relation'] for x in relations}
 
+        entity_set = sample['entity_set']
+        entity_set = [list(map(lambda x: int(x[1:]) - 1, y)) for y in entity_set]
+
         # Sort entities by their starting positions to make our lives a little easier.
         entities_by_position = [(entity_id, entity) for entity_id, entity in entities.items()]
         entities_by_position = sorted(entities_by_position, key=lambda x: x[1][0]['start'])
@@ -230,6 +233,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         feature = {'pmid': doc_id,
                    'input_ids': input_ids,
                    'entity_positions': entity_positions,
+                   'entity_set': entity_set,
                    'head_tail_pairs': head_tail_pairs,
                    'labels': labels}
         features.append(feature)
@@ -257,6 +261,7 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
                     'title': str,
                     'context': str,
                     'entities': {},
+                    'entity_set': {},
                     'relations': []}
 
         doc_id = document[0]
@@ -279,6 +284,7 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
         doc_entities = [entity for entity in entities if entity[0] == doc_id]
         doc_relations = [relation for relation in relations if relation[0] == doc_id]
 
+        entity_set = {}
         for entity in doc_entities:
             entity_id = entity[1]
             entity_type = entity[2]
@@ -286,17 +292,28 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
             entity_end = int(entity[4])
             entity_name = entity[5]
 
+            try:
+                entity_set[entity_name].append(entity_id)
+            except KeyError:
+                entity_set[entity_name] = [entity_id]
+
             for sentence_id, positions in sentenceid2charspan.items():
                 if entity_start in positions:
                     entity_sentence_id = sentence_id
                     break
 
-            entity_template = {'type': entity_type, 'name': entity_name, 'start': int(entity_start), 'end': int(entity_end), 'sentence_id': entity_sentence_id}
+            entity_template = {'type': entity_type,
+                               'name': entity_name,
+                               'start': int(entity_start),
+                               'end': int(entity_end),
+                               'sentence_id': entity_sentence_id}
 
             try:
                 template['entities'][entity_id].append(entity_template)
             except KeyError:
                 template['entities'][entity_id] = [entity_template]
+
+        template['entity_set'] = list(entity_set.values())
 
         for relation in doc_relations:
             relation_name = relation[1]
@@ -337,11 +354,11 @@ def main(args):
     train_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=train_abstracts, entities=train_entities, relations=train_relations)
     dev_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=dev_abstracts, entities=dev_entities, relations=dev_relations)
 
-    train_save_file = os.path.join(train_dir, 'train.json')
+    train_save_file = os.path.join(train_dir, 'train2.json')
     with open(file=train_save_file, mode='w') as f:
         json.dump(obj=train_data, fp=f, indent=2)
 
-    dev_save_file = os.path.join(dev_dir, 'dev.json')
+    dev_save_file = os.path.join(dev_dir, 'dev2.json')
     with open(file=dev_save_file, mode='w') as f:
         json.dump(obj=dev_data, fp=f, indent=2)
 
