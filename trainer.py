@@ -62,9 +62,7 @@ def collate_fn(batch):
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     attention_mask = torch.tensor(attention_mask, dtype=torch.float)
 
-    entity_set = [x['entity_set'] for x in batch]
-
-    output = (input_ids, attention_mask, entity_positions, entity_set, head_tail_pairs, labels)
+    output = (input_ids, attention_mask, entity_positions, head_tail_pairs, labels)
 
     return output
 
@@ -82,10 +80,12 @@ class Trainer():
             self.train_data = self.train_data[:100]
             self.dev_data = self.dev_data[:100]
 
+        import pdb; pdb.set_trace()
         self.train_features = convert_data_to_features(data=self.train_data,
                                                        tokenizer=tokenizer,
                                                        negative_ratio=args.negative_ratio,
                                                        entity_marker=args.entity_marker)
+        import pdb; pdb.set_trace()
         self.dev_features = convert_data_to_features(data=self.dev_data,
                                                      tokenizer=tokenizer,
                                                      negative_ratio=args.negative_ratio,
@@ -147,9 +147,8 @@ class Trainer():
                 inputs = {'input_ids': batch[0].to('cuda'),
                           'attention_mask': batch[1].to('cuda'),
                           'entity_positions': batch[2],
-                          'entity_set': batch[3],
-                          'head_tail_pairs': batch[4],
-                          'labels': batch[5]}
+                          'head_tail_pairs': batch[3],
+                          'labels': batch[4]}
 
                 outputs = self.model(**inputs)
 
@@ -200,8 +199,7 @@ class Trainer():
             inputs = {'input_ids': batch[0].to('cuda'),
                       'attention_mask': batch[1].to('cuda'),
                       'entity_positions': batch[2],
-                      'entity_set': batch[3],
-                      'head_tail_pairs': batch[4]}
+                      'head_tail_pairs': batch[3]}
 
             if mode == 'dev':
                 inputs['labels'] = batch[4]
