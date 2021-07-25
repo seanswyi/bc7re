@@ -80,12 +80,10 @@ class Trainer():
             self.train_data = self.train_data[:100]
             self.dev_data = self.dev_data[:100]
 
-        import pdb; pdb.set_trace()
         self.train_features = convert_data_to_features(data=self.train_data,
                                                        tokenizer=tokenizer,
                                                        negative_ratio=args.negative_ratio,
                                                        entity_marker=args.entity_marker)
-        import pdb; pdb.set_trace()
         self.dev_features = convert_data_to_features(data=self.dev_data,
                                                      tokenizer=tokenizer,
                                                      negative_ratio=args.negative_ratio,
