@@ -275,11 +275,6 @@ class DrugProtREModel(nn.Module):
 
         predictions = self.get_predictions(logits=logits, sentence_ids=sentence_ids, use_at_loss=self.use_at_loss, k=self.adaptive_thresholding_k)
 
-        if self.use_at_loss:
-            predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
-        elif not self.use_at_loss:
-            predictions = torch.argmax(logits, dim=-1)
-
         output = (predictions,)
 
         if labels:
