@@ -124,6 +124,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
 
         # Create (head, tail, relation) triples.
         head_tail_pairs = []
+        sentence_ids = []
         labels = []
         total_num_negative = math.floor(len(relations) * negative_ratio)
         negative_count = 0
@@ -132,9 +133,11 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
 
             head_id = pair[0]
             head_idx = int(head_id[1:]) - 1
+            head_sentence_id = entities[head_id][0]['sentence_id']
 
             tail_id = pair[1]
             tail_idx = int(tail_id[1:]) - 1
+            tail_sentence_id = entities[tail_id][0]['sentence_id']
 
             if (head_id, tail_id) in pair2relation:
                 relation_name = pair2relation[(head_id, tail_id)]
@@ -152,6 +155,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                 num_negative_samples += 1
 
             head_tail_pairs.append([head_idx, tail_idx])
+            sentence_ids.append([head_sentence_id, tail_sentence_id])
 
             labels.append(relation)
 
@@ -227,14 +231,11 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
 
-        if head_tail_pairs == labels:
-            print("PREPROCESS")
-            import pdb; pdb.set_trace()
-
         feature = {'pmid': doc_id,
                    'input_ids': input_ids,
                    'entity_positions': entity_positions,
                    'head_tail_pairs': head_tail_pairs,
+                   'sentence_ids': sentence_ids,
                    'labels': labels}
         features.append(feature)
 
@@ -283,6 +284,25 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
         doc_entities = [entity for entity in entities if entity[0] == doc_id]
         doc_relations = [relation for relation in relations if relation[0] == doc_id]
 
+        for entity in doc_entities:
+            entity_id = entity[1]
+            entity_type = entity[2]
+            entity_start = int(entity[3])
+            entity_end = int(entity[4])
+            entity_name = entity[5]
+
+            for sentence_id, positions in sentenceid2charspan.items():
+                if entity_start in positions:
+                    entity_sentence_id = sentence_id
+                    break
+
+            entity_template = {'type': entity_type, 'name': entity_name, 'start': int(entity_start), 'end': int(entity_end), 'sentence_id': entity_sentence_id}
+
+            try:
+                template['entities'][entity_id].append(entity_template)
+            except KeyError:
+                template['entities'][entity_id] = [entity_template]
+
         for relation in doc_relations:
             relation_name = relation[1]
             head_entity = relation[2].split(':')[1]
@@ -322,11 +342,11 @@ def main(args):
     train_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=train_abstracts, entities=train_entities, relations=train_relations)
     dev_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=dev_abstracts, entities=dev_entities, relations=dev_relations)
 
-    train_save_file = os.path.join(train_dir, 'train2.json')
+    train_save_file = os.path.join(train_dir, 'train.json')
     with open(file=train_save_file, mode='w') as f:
         json.dump(obj=train_data, fp=f, indent=2)
 
-    dev_save_file = os.path.join(dev_dir, 'dev2.json')
+    dev_save_file = os.path.join(dev_dir, 'dev.json')
     with open(file=dev_save_file, mode='w') as f:
         json.dump(obj=dev_data, fp=f, indent=2)
 
