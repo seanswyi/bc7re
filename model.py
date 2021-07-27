@@ -200,22 +200,35 @@ class DrugProtREModel(nn.Module):
 
         return head_representations, tail_representations, attention_representations, cls_representations
 
-    def get_label(self, logits, k=-1):
-        threshold_logit = logits[:, 0].unsqueeze(1)
-        output = torch.zeros_like(logits).to(logits)
-        mask = logits > threshold_logit
+    def get_predictions(self, logits, sentence_ids, use_at_loss=True, k=-1):
+        if use_at_loss:
+            threshold_logit = logits[:, 0].unsqueeze(1)
+            predictions = torch.zeros_like(logits).to(logits)
+            mask = logits > threshold_logit
 
-        if k > 0:
-            top_v, _ = torch.topk(logits, k, dim=1)
-            top_v = top_v[:, -1]
-            mask = (logits >= top_v.unsqueeze(1)) & mask
+            if k > 0:
+                top_v, _ = torch.topk(logits, k, dim=1)
+                top_v = top_v[:, -1]
+                mask = (logits >= top_v.unsqueeze(1)) & mask
 
-        output[mask] = 1.0
-        output[:, 0] = (output.sum(1) == 0.).to(logits)
+            predictions[mask] = 1.0
+            predictions[:, 0] = (predictions.sum(1) == 0.).to(logits)
+        else:
+            predictions = torch.argmax(logits, dim=-1)
 
-        return output
+        # If the entity pair is inter-sentence, then no-relation is predicted.
+        for idx, id_pair in enumerate(sentence_ids):
+            head_sentence_id = id_pair[0]
+            tail_sentence_id = id_pair[1]
 
-    def forward(self, input_ids, attention_mask, entity_positions, head_tail_pairs, labels=None):
+            if head_sentence_id != tail_sentence_id:
+                true_idx = torch.argmax(predictions[idx])
+                predictions[idx][true_idx] = 0
+                predictions[idx][0] = 1
+
+        return predictions
+
+    def forward(self, input_ids, attention_mask, entity_positions, head_tail_pairs, sentence_ids, labels=None):
         start_tokens = [self.cls_token_id]
         end_tokens = [self.sep_token_id]
 
@@ -249,13 +262,18 @@ class DrugProtREModel(nn.Module):
 
                     temp1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size * 2, self.bilinear_block_size)
                     temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size * 2, self.bilinear_block_size)
+                    representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size * 2)
                 elif self.classification_type == 'entity_marker':
                     temp1 = heads_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
                     temp2 = tails_extracted.view(-1, self.hidden_size // self.bilinear_block_size, self.bilinear_block_size)
-
-                representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
+                    representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
 
         logits = self.classifier(representations)
+
+        sentence_ids = sum(sentence_ids, [])
+        assert len(sentence_ids) == logits.shape[0], f"len(sentence_ids) = {len(sentence_ids)} and logits.shape[0] = {logits.shape[0]}"
+
+        predictions = self.get_predictions(logits=logits, sentence_ids=sentence_ids, use_at_loss=self.use_at_loss, k=self.adaptive_thresholding_k)
 
         if self.use_at_loss:
             predictions = self.get_label(logits, k=self.adaptive_thresholding_k)
