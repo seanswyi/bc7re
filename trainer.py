@@ -58,11 +58,12 @@ def collate_fn(batch):
     labels = [x['labels'] for x in batch]
     entity_positions = [x['entity_positions'] for x in batch]
     head_tail_pairs = [x['head_tail_pairs'] for x in batch]
+    sentence_ids = [x['sentence_ids'] for x in batch]
 
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     attention_mask = torch.tensor(attention_mask, dtype=torch.float)
 
-    output = (input_ids, attention_mask, entity_positions, head_tail_pairs, labels)
+    output = (input_ids, attention_mask, entity_positions, head_tail_pairs, sentence_ids, labels)
 
     return output
 
@@ -135,18 +136,19 @@ class Trainer():
         best_score = 0
         num_steps = 0
         epoch_pbar = trange(self.num_epochs, desc="Epoch", total=self.num_epochs)
-        for _ in epoch_pbar:
+        for epoch in epoch_pbar:
             self.model.zero_grad()
 
             train_pbar = tqdm(iterable=train_dataloader, desc="Training", total=len(train_dataloader))
-            for batch in train_pbar:
+            for step, batch in enumerate(train_pbar):
                 self.model.train()
 
                 inputs = {'input_ids': batch[0].to('cuda'),
                           'attention_mask': batch[1].to('cuda'),
                           'entity_positions': batch[2],
                           'head_tail_pairs': batch[3],
-                          'labels': batch[4]}
+                          'sentence_ids': batch[4],
+                          'labels': batch[5]}
 
                 outputs = self.model(**inputs)
 
@@ -171,7 +173,7 @@ class Trainer():
                         best_score = results['f1']
 
                         if not self.args.dont_save:
-                            checkpoint_file = f'{self.wandb_name}.pt'
+                            checkpoint_file = f'{self.wandb_name}_{num_steps}.pt'
                             checkpoint_filename = os.path.join(self.checkpoint_save_dir, checkpoint_file)
                             torch.save(self.model.state_dict(), checkpoint_filename)
 
@@ -197,10 +199,11 @@ class Trainer():
             inputs = {'input_ids': batch[0].to('cuda'),
                       'attention_mask': batch[1].to('cuda'),
                       'entity_positions': batch[2],
-                      'head_tail_pairs': batch[3]}
+                      'head_tail_pairs': batch[3],
+                      'sentence_ids': batch[4]}
 
             if mode == 'dev':
-                inputs['labels'] = batch[4]
+                inputs['labels'] = batch[5]
 
             with torch.no_grad():
                 output = self.model(**inputs)
