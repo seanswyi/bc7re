@@ -74,6 +74,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', default=30, type=int)
     parser.add_argument('--num_labels', default=14, type=int)
     parser.add_argument('--pred_save_dir', default='/hdd1/seokwon/BC7/predictions', type=str)
+    parser.add_argument('--setting', default='document', type=str, choices=['document', 'sentence'])
     parser.add_argument('--train_file', default='train.json', type=str)
     parser.add_argument('--use_at_loss', action='store_true', default=False)
     parser.add_argument('--use_attention', action='store_true', default=False)
@@ -90,7 +91,7 @@ if __name__ == '__main__':
     elif 'roberta' in args.model_name_or_path.lower():
         model_name = 'biolm'
 
-    wandb_name = f'{model_name}_{args.classification_type}_{args.classifier_type}_{args.learning_rate}_{args.classifier_learning_rate}_{args.negative_ratio}_{args.timestamp}'
+    wandb_name = f'{model_name}_{args.setting}_{args.classification_type}_{args.classifier_type}_{args.learning_rate}_{args.classifier_learning_rate}_{args.negative_ratio}_{args.timestamp}'
 
     if args.use_at_loss:
         wandb_name = 'AT_' + wandb_name
