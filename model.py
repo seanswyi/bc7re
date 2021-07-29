@@ -162,11 +162,11 @@ class DrugProtREModel(nn.Module):
             encoded_text = encoded_output[batch_idx]
             batch_attention = attention[batch_idx]
 
-            cls_representation = encoded_text[0]
-            cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
-            cls_representations.append(cls_representation_tiled)
-
             if setting == 'document':
+                cls_representation = encoded_text[0]
+                cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
+                cls_representations.append(cls_representation_tiled)
+
                 for pair in head_tail_pair:
                     head_id = pair[0]
                     tail_id = pair[1]
@@ -190,6 +190,10 @@ class DrugProtREModel(nn.Module):
 
                     attention_representations.append(attention_representation)
             elif setting == 'sentence':
+                cls_representation = encoded_text[0]
+                cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pairs), 1))
+                cls_representations.append(cls_representation_tiled)
+
                 head_id = head_tail_pair[0]
                 tail_id = head_tail_pair[1]
 
