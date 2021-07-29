@@ -13,13 +13,13 @@ with open(file='/hdd1/seokwon/data/BC7DP/relation2id.json') as f:
     relation2id = json.load(fp=f)
 
 
-def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='asterisk', mode='train'):
+def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='asterisk', mode='train', setting='document'):
     features = []
 
     num_positive_samples = 0
     num_negative_samples = 0
 
-    pbar = tqdm(iterable=data, desc=f"Converting {mode} data to features", total=len(data))
+    pbar = tqdm(iterable=data, desc=f"Converting {setting} {mode} data to features", total=len(data))
     for sample in pbar:
         feature = {'input_ids': [],
                    'entity_positions': [],
@@ -176,82 +176,141 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
         if sum(head_tail_pairs, []) == []:
             continue
 
-        # for pair, label in zip(head_tail_pairs, labels):
-            # entity_starts_ = []
-            # entity_ends_ = []
+        if setting == 'document':
+            tokens = []
+            word2token_span = {}
+            current_idx = 0
+            for word_idx, word in enumerate(new_text):
+                tokens_ = tokenizer.tokenize(word)
+                token_start = len(tokens)
 
-            # head = pair[0]
-            # tail = pair[1]
+                if word_idx in [x[1] for x in entity_starts]:
+                    if entity_marker == 'asterisk':
+                        tokens_ = ['*'] + tokens_
+                    elif entity_marker == 'typed':
+                        idx = [x[1] for x in entity_starts].index(word_idx)
+                        entity_type = entity_starts[idx][0]
 
-            # entity_starts_.append(entity_starts[head])
-            # entity_ends_.append(entity_ends[head])
-            # entity_starts_.append(entity_starts[tail])
-            # entity_ends_.append(entity_ends[tail])
+                        if 'GENE' in entity_type:
+                            entity_type = 'GENE'
 
-        tokens = []
-        word2token_span = {}
-        current_idx = 0
-        for word_idx, word in enumerate(new_text):
-            tokens_ = tokenizer.tokenize(word)
-            token_start = len(tokens)
+                        tokens_ = ['[' + entity_type + ']'] + tokens_
 
-            if word_idx in [x[1] for x in entity_starts]:
-                if entity_marker == 'asterisk':
-                    tokens_ = ['*'] + tokens_
-                elif entity_marker == 'typed':
-                    idx = [x[1] for x in entity_starts].index(word_idx)
-                    entity_type = entity_starts[idx][0]
+                if word_idx in [x[1] - 1 for x in entity_ends]:
+                    if entity_marker == 'asterisk':
+                        tokens_ = tokens_ + ['*']
+                    elif entity_marker == 'typed':
+                        idx = [x[1] - 1 for x in entity_ends].index(word_idx)
+                        entity_type = entity_ends[idx][0]
 
-                    if 'GENE' in entity_type:
-                        entity_type = 'GENE'
+                        if 'GENE' in entity_type:
+                            entity_type = 'GENE'
 
-                    tokens_ = ['[' + entity_type + ']'] + tokens_
+                        tokens_ = tokens_ + ['[' + entity_type + ']']
 
-            if word_idx in [x[1] - 1 for x in entity_ends]:
-                if entity_marker == 'asterisk':
-                    tokens_ = tokens_ + ['*']
-                elif entity_marker == 'typed':
-                    idx = [x[1] - 1 for x in entity_ends].index(word_idx)
-                    entity_type = entity_ends[idx][0]
+                tokens.extend(tokens_)
+                token_end = len(tokens)
+                token_span = list(range(token_start, token_end + 1))
 
-                    if 'GENE' in entity_type:
-                        entity_type = 'GENE'
+                word2token_span[word_idx] = token_span
 
-                    tokens_ = tokens_ + ['[' + entity_type + ']']
+            # Convert word-level spans to token-level spans.
+            entity_positions = []
+            for entity_id, entity in entities.items():
+                for mention in entity:
+                    word_lvl_start = mention['start']
+                    word_lvl_end = mention['end']
 
-            tokens.extend(tokens_)
-            token_end = len(tokens)
-            token_span = list(range(token_start, token_end + 1))
+                    if word_lvl_end - word_lvl_start == 1:
+                        token_lvl_start = word2token_span[word_lvl_start][0]
+                        token_lvl_end = word2token_span[word_lvl_start][-1]
+                    elif word_lvl_end - word_lvl_start > 1:
+                        token_lvl_start = word2token_span[word_lvl_start][0]
+                        token_lvl_end = word2token_span[word_lvl_end - 1][-1]
 
-            word2token_span[word_idx] = token_span
+                    entity_positions.append([token_lvl_start, token_lvl_end])
 
-        # Convert word-level spans to token-level spans.
-        entity_positions = []
-        for entity_id, entity in entities.items():
-            for mention in entity:
-                word_lvl_start = mention['start']
-                word_lvl_end = mention['end']
+            # Build input IDs.
+            input_ids = tokenizer.convert_tokens_to_ids(tokens)
+            input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
 
-                if word_lvl_end - word_lvl_start == 1:
-                    token_lvl_start = word2token_span[word_lvl_start][0]
-                    token_lvl_end = word2token_span[word_lvl_start][-1]
-                elif word_lvl_end - word_lvl_start > 1:
-                    token_lvl_start = word2token_span[word_lvl_start][0]
-                    token_lvl_end = word2token_span[word_lvl_end - 1][-1]
+            feature = {'pmid': doc_id,
+                       'input_ids': input_ids,
+                       'entity_positions': entity_positions,
+                       'head_tail_pairs': head_tail_pairs,
+                       'sentence_ids': sentence_ids,
+                       'labels': labels}
+            features.append(feature)
+        elif setting == 'sentence':
+            for pair, label in zip(head_tail_pairs, labels):
+                tokens = []
+                word2token_span = {}
+                current_idx = 0
 
-                entity_positions.append([token_lvl_start, token_lvl_end])
+                new_entity_starts = [position for idx, position in enumerate(entity_starts) if idx in pair]
+                new_entity_ends = [position for idx, position in enumerate(entity_ends) if idx in pair]
 
-        # Build input IDs.
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
-        input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
+                for word_idx, word in enumerate(new_text):
+                    tokens_ = tokenizer.tokenize(word)
+                    token_start = len(tokens)
 
-        feature = {'pmid': doc_id,
-                   'input_ids': input_ids,
-                   'entity_positions': entity_positions,
-                   'head_tail_pairs': head_tail_pairs,
-                   'sentence_ids': sentence_ids,
-                   'labels': labels}
-        features.append(feature)
+                    if word_idx in [x[1] for x in new_entity_starts]:
+                        if entity_marker == 'asterisk':
+                            tokens_ = ['*'] + tokens_
+                        elif entity_marker == 'typed':
+                            idx = [x[1] for x in new_entity_starts].index(word_idx)
+                            entity_type = new_entity_starts[idx][0]
+
+                            if 'GENE' in entity_type:
+                                entity_type = 'GENE'
+
+                            tokens_ = ['[' + entity_type + ']'] + tokens_
+
+                    if word_idx in [x[1] - 1 for x in new_entity_ends]:
+                        if entity_marker == 'asterisk':
+                            tokens_ = tokens_ + ['*']
+                        elif entity_marker == 'typed':
+                            idx = [x[1] - 1 for x in new_entity_ends].index(word_idx)
+                            entity_type = new_entity_ends[idx][0]
+
+                            if 'GENE' in entity_type:
+                                entity_type = 'GENE'
+
+                            tokens_ = tokens_ + ['[' + entity_type + ']']
+
+                    tokens.extend(tokens_)
+                    token_end = len(tokens)
+                    token_span = list(range(token_start, token_end + 1))
+
+                    word2token_span[word_idx] = token_span
+
+                # Convert word-level spans to token-level spans.
+                entity_positions = []
+                for entity_id, entity in entities.items():
+                    for mention in entity:
+                        word_lvl_start = mention['start']
+                        word_lvl_end = mention['end']
+
+                        if word_lvl_end - word_lvl_start == 1:
+                            token_lvl_start = word2token_span[word_lvl_start][0]
+                            token_lvl_end = word2token_span[word_lvl_start][-1]
+                        elif word_lvl_end - word_lvl_start > 1:
+                            token_lvl_start = word2token_span[word_lvl_start][0]
+                            token_lvl_end = word2token_span[word_lvl_end - 1][-1]
+
+                        entity_positions.append([token_lvl_start, token_lvl_end])
+
+                # Build input IDs.
+                input_ids = tokenizer.convert_tokens_to_ids(tokens)
+                input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
+
+                feature = {'pmid': doc_id,
+                           'input_ids': input_ids,
+                           'entity_positions': entity_positions,
+                           'head_tail_pairs': pair,
+                           'sentence_ids': sentence_ids,
+                           'labels': label}
+                features.append(feature)
 
     print(f"Number of positive samples ({mode}): {num_positive_samples}")
     print(f"Number of negative samples ({mode}): {num_negative_samples}")
