@@ -166,10 +166,32 @@ class DrugProtREModel(nn.Module):
             cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
             cls_representations.append(cls_representation_tiled)
 
-            for pair in head_tail_pair:
-                import pdb; pdb.set_trace()
-                head_id = pair[0]
-                tail_id = pair[1]
+            if setting == 'document':
+                for pair in head_tail_pair:
+                    head_id = pair[0]
+                    tail_id = pair[1]
+
+                    head_entities = entities[head_id]
+                    tail_entities = entities[tail_id]
+
+                    head_start = head_entities[0]
+                    tail_start = tail_entities[0]
+
+                    head_representation = encoded_text[head_start + 1]
+                    tail_representation = encoded_text[tail_start + 1]
+
+                    head_representations.append(head_representation)
+                    tail_representations.append(tail_representation)
+
+                    head_attention = batch_attention[:, head_start + 1]
+                    tail_attention = batch_attention[:, tail_start + 1]
+                    head_tail_attention = (head_attention * tail_attention).mean(0)
+                    attention_representation = contract('rl, ld -> rd', head_tail_attention.unsqueeze(0), encoded_text)
+
+                    attention_representations.append(attention_representation)
+            elif setting == 'sentence':
+                head_id = head_tail_pair[0]
+                tail_id = head_tail_pair[1]
 
                 head_entities = entities[head_id]
                 tail_entities = entities[tail_id]
@@ -189,6 +211,8 @@ class DrugProtREModel(nn.Module):
                 attention_representation = contract('rl, ld -> rd', head_tail_attention.unsqueeze(0), encoded_text)
 
                 attention_representations.append(attention_representation)
+
+        import pdb; pdb.set_trace()
 
         try:
             head_representations = torch.stack(head_representations, dim=0)
