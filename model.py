@@ -19,6 +19,7 @@ class DrugProtREModel(nn.Module):
 
         self.args = args
         self.config = config
+        self.setting = args.setting
 
         self.adaptive_thresholding_k = args.adaptive_thresholding_k
         self.bilinear_block_size = args.bilinear_block_size
@@ -150,7 +151,7 @@ class DrugProtREModel(nn.Module):
 
         return encoded_output, attention
 
-    def get_representations(self, encoded_output, attention, entity_positions, head_tail_pairs):
+    def get_representations(self, encoded_output, attention, entity_positions, head_tail_pairs, setting='document'):
         head_representations = []
         tail_representations = []
         attention_representations = []
@@ -166,6 +167,7 @@ class DrugProtREModel(nn.Module):
             cls_representations.append(cls_representation_tiled)
 
             for pair in head_tail_pair:
+                import pdb; pdb.set_trace()
                 head_id = pair[0]
                 tail_id = pair[1]
 
@@ -239,7 +241,8 @@ class DrugProtREModel(nn.Module):
         heads, tails, attentions, clss = self.get_representations(encoded_output=encoded_output,
                                                                   attention=attention,
                                                                   entity_positions=entity_positions,
-                                                                  head_tail_pairs=head_tail_pairs)
+                                                                  head_tail_pairs=head_tail_pairs,
+                                                                  setting=self.setting)
 
         if self.classification_type == 'cls':
             representations = clss
