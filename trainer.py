@@ -84,12 +84,14 @@ class Trainer():
         self.train_features = convert_data_to_features(data=self.train_data,
                                                        tokenizer=tokenizer,
                                                        negative_ratio=args.negative_ratio,
-                                                       entity_marker=args.entity_marker)
+                                                       entity_marker=args.entity_marker,
+                                                       setting=args.setting)
         self.dev_features = convert_data_to_features(data=self.dev_data,
                                                      tokenizer=tokenizer,
                                                      negative_ratio=args.negative_ratio,
                                                      entity_marker=args.entity_marker,
-                                                     mode='dev')
+                                                     mode='dev',
+                                                     setting=args.setting)
 
         self.batch_size = args.batch_size
         self.entity_marker = args.entity_marker
