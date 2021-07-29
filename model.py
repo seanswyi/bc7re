@@ -217,14 +217,17 @@ class DrugProtREModel(nn.Module):
             predictions = torch.argmax(logits, dim=-1)
 
         # If the entity pair is inter-sentence, then no-relation is predicted.
-        for idx, id_pair in enumerate(sentence_ids):
-            head_sentence_id = id_pair[0]
-            tail_sentence_id = id_pair[1]
+        # for idx, id_pair in enumerate(sentence_ids):
+        #     head_sentence_id = id_pair[0]
+        #     tail_sentence_id = id_pair[1]
 
-            if head_sentence_id != tail_sentence_id:
-                true_idx = torch.argmax(predictions[idx])
-                predictions[idx][true_idx] = 0
-                predictions[idx][0] = 1
+        #     if head_sentence_id != tail_sentence_id:
+        #         if use_at_loss:
+        #             true_idx = torch.argmax(predictions[idx])
+        #             predictions[idx][true_idx] = 0
+        #             predictions[idx][0] = 1
+        #         else:
+        #             predictions[idx] = 0
 
         return predictions
 

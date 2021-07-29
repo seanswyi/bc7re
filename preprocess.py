@@ -122,6 +122,20 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
 
         all_entity_pairs = list(product(chemical_entities, gene_entities))
 
+        # if mode == 'train':
+        temp_pairs = []
+        for pair in all_entity_pairs:
+            head_id = pair[0]
+            tail_id = pair[1]
+
+            head_sentence_id = entities[head_id][0]['sentence_id']
+            tail_sentence_id = entities[tail_id][0]['sentence_id']
+
+            if head_sentence_id == tail_sentence_id:
+                temp_pairs.append(pair)
+
+        all_entity_pairs = temp_pairs
+
         # Create (head, tail, relation) triples.
         head_tail_pairs = []
         sentence_ids = []
