@@ -21,7 +21,7 @@ def main(args):
     args.entity_file = os.path.join(args.data_dir, 'development', args.entity_file)
 
     logger.info('Arguments:')
-    for name, value in vars(args).items():
+    for name, value in sorted([(x, y) for x, y in vars(args).items()], key=lambda x: x[0]):
         logger.info(f'\t{name}: {value}')
 
     config = AutoConfig.from_pretrained(args.model_name_or_path)

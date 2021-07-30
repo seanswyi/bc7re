@@ -157,8 +157,6 @@ class DrugProtREModel(nn.Module):
         attention_representations = []
         cls_representations = []
 
-        import pdb; pdb.set_trace()
-
         for batch_idx, head_tail_pair in enumerate(head_tail_pairs):
             entities = entity_positions[batch_idx]
             encoded_text = encoded_output[batch_idx]
@@ -218,7 +216,6 @@ class DrugProtREModel(nn.Module):
 
                 attention_representations.append(attention_representation)
 
-        import pdb; pdb.set_trace()
         try:
             head_representations = torch.stack(head_representations, dim=0)
             tail_representations = torch.stack(tail_representations, dim=0)
@@ -306,7 +303,6 @@ class DrugProtREModel(nn.Module):
         logits = self.classifier(representations)
 
         sentence_ids = sum(sentence_ids, [])
-        assert len(sentence_ids) == logits.shape[0], f"len(sentence_ids) = {len(sentence_ids)} and logits.shape[0] = {logits.shape[0]}"
 
         predictions = self.get_predictions(logits=logits, sentence_ids=sentence_ids, use_at_loss=self.use_at_loss, k=self.adaptive_thresholding_k)
 
