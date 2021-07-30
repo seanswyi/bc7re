@@ -157,6 +157,8 @@ class DrugProtREModel(nn.Module):
         attention_representations = []
         cls_representations = []
 
+        import pdb; pdb.set_trace()
+
         for batch_idx, head_tail_pair in enumerate(head_tail_pairs):
             entities = entity_positions[batch_idx]
             encoded_text = encoded_output[batch_idx]
@@ -191,7 +193,7 @@ class DrugProtREModel(nn.Module):
                     attention_representations.append(attention_representation)
             elif setting == 'sentence':
                 cls_representation = encoded_text[0]
-                cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pairs), 1))
+                cls_representation_tiled = cls_representation.repeat(repeats=(1, 1))
                 cls_representations.append(cls_representation_tiled)
 
                 head_id = head_tail_pair[0]
