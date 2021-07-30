@@ -191,7 +191,7 @@ class DrugProtREModel(nn.Module):
                     attention_representations.append(attention_representation)
             elif setting == 'sentence':
                 cls_representation = encoded_text[0]
-                cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pairs), 1))
+                cls_representation_tiled = cls_representation.repeat(repeats=(1, 1))
                 cls_representations.append(cls_representation_tiled)
 
                 head_id = head_tail_pair[0]
@@ -216,6 +216,7 @@ class DrugProtREModel(nn.Module):
 
                 attention_representations.append(attention_representation)
 
+        import pdb; pdb.set_trace()
         try:
             head_representations = torch.stack(head_representations, dim=0)
             tail_representations = torch.stack(tail_representations, dim=0)
