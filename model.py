@@ -218,6 +218,7 @@ class DrugProtREModel(nn.Module):
 
                 attention_representations.append(attention_representation)
 
+        import pdb; pdb.set_trace()
         try:
             head_representations = torch.stack(head_representations, dim=0)
             tail_representations = torch.stack(tail_representations, dim=0)
