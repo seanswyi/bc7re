@@ -255,8 +255,6 @@ class Trainer():
         tail_idxs = []
         pmids = []
 
-        import pdb; pdb.set_trace()
-
         all_results = []
 
         for feature in features:
