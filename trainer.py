@@ -135,6 +135,8 @@ class Trainer():
                                                     num_warmup_steps=warmup_steps,
                                                     num_training_steps=total_steps)
 
+        wandb.watch(self.model, log='all')
+
         best_score = 0
         num_steps = 0
         epoch_pbar = trange(self.num_epochs, desc="Epoch", total=self.num_epochs)
