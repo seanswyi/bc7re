@@ -307,7 +307,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                 feature = {'pmid': doc_id,
                            'input_ids': input_ids,
                            'entity_positions': entity_positions,
-                           'head_tail_pairs': pair,
+                           'head_tail_pairs': [pair],
                            'sentence_ids': sentence_ids,
                            'labels': label}
                 features.append(feature)
