@@ -19,7 +19,6 @@ class DrugProtREModel(nn.Module):
 
         self.args = args
         self.config = config
-        self.setting = args.setting
 
         self.adaptive_thresholding_k = args.adaptive_thresholding_k
         self.bilinear_block_size = args.bilinear_block_size
@@ -151,7 +150,7 @@ class DrugProtREModel(nn.Module):
 
         return encoded_output, attention
 
-    def get_representations(self, encoded_output, attention, entity_positions, head_tail_pairs, setting='document'):
+    def get_representations(self, encoded_output, attention, entity_positions, head_tail_pairs):
         head_representations = []
         tail_representations = []
         attention_representations = []
@@ -162,40 +161,13 @@ class DrugProtREModel(nn.Module):
             encoded_text = encoded_output[batch_idx]
             batch_attention = attention[batch_idx]
 
-            if setting == 'document':
-                cls_representation = encoded_text[0]
-                cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
-                cls_representations.append(cls_representation_tiled)
+            cls_representation = encoded_text[0]
+            cls_representation_tiled = cls_representation.repeat(repeats=(len(head_tail_pair), 1))
+            cls_representations.append(cls_representation_tiled)
 
-                for pair in head_tail_pair:
-                    head_id = pair[0]
-                    tail_id = pair[1]
-
-                    head_entities = entities[head_id]
-                    tail_entities = entities[tail_id]
-
-                    head_start = head_entities[0]
-                    tail_start = tail_entities[0]
-
-                    head_representation = encoded_text[head_start + 1]
-                    tail_representation = encoded_text[tail_start + 1]
-
-                    head_representations.append(head_representation)
-                    tail_representations.append(tail_representation)
-
-                    head_attention = batch_attention[:, head_start + 1]
-                    tail_attention = batch_attention[:, tail_start + 1]
-                    head_tail_attention = (head_attention * tail_attention).mean(0)
-                    attention_representation = contract('rl, ld -> rd', head_tail_attention.unsqueeze(0), encoded_text)
-
-                    attention_representations.append(attention_representation)
-            elif setting == 'sentence':
-                cls_representation = encoded_text[0]
-                cls_representation_tiled = cls_representation.repeat(repeats=(1, 1))
-                cls_representations.append(cls_representation_tiled)
-
-                head_id = head_tail_pair[0]
-                tail_id = head_tail_pair[1]
+            for pair in head_tail_pair:
+                head_id = pair[0]
+                tail_id = pair[1]
 
                 head_entities = entities[head_id]
                 tail_entities = entities[tail_id]
@@ -228,7 +200,7 @@ class DrugProtREModel(nn.Module):
 
         return head_representations, tail_representations, attention_representations, cls_representations
 
-    def get_predictions(self, logits, sentence_ids, use_at_loss=True, k=-1):
+    def get_predictions(self, logits, use_at_loss=True, k=-1):
         if use_at_loss:
             threshold_logit = logits[:, 0].unsqueeze(1)
             predictions = torch.zeros_like(logits).to(logits)
@@ -244,19 +216,6 @@ class DrugProtREModel(nn.Module):
         else:
             predictions = torch.argmax(logits, dim=-1)
 
-        # If the entity pair is inter-sentence, then no-relation is predicted.
-        # for idx, id_pair in enumerate(sentence_ids):
-        #     head_sentence_id = id_pair[0]
-        #     tail_sentence_id = id_pair[1]
-
-        #     if head_sentence_id != tail_sentence_id:
-        #         if use_at_loss:
-        #             true_idx = torch.argmax(predictions[idx])
-        #             predictions[idx][true_idx] = 0
-        #             predictions[idx][0] = 1
-        #         else:
-        #             predictions[idx] = 0
-
         return predictions
 
     def forward(self, input_ids, attention_mask, entity_positions, head_tail_pairs, sentence_ids, labels=None):
@@ -267,8 +226,7 @@ class DrugProtREModel(nn.Module):
         heads, tails, attentions, clss = self.get_representations(encoded_output=encoded_output,
                                                                   attention=attention,
                                                                   entity_positions=entity_positions,
-                                                                  head_tail_pairs=head_tail_pairs,
-                                                                  setting=self.setting)
+                                                                  head_tail_pairs=head_tail_pairs)
 
         if self.classification_type == 'cls':
             representations = clss
@@ -301,11 +259,7 @@ class DrugProtREModel(nn.Module):
                     representations = (temp1.unsqueeze(3) * temp2.unsqueeze(2)).view(-1, self.hidden_size * self.bilinear_block_size)
 
         logits = self.classifier(representations)
-
-        sentence_ids = sum(sentence_ids, [])
-
-        predictions = self.get_predictions(logits=logits, sentence_ids=sentence_ids, use_at_loss=self.use_at_loss, k=self.adaptive_thresholding_k)
-
+        predictions = self.get_predictions(logits=logits, use_at_loss=self.use_at_loss, k=self.adaptive_thresholding_k)
         output = (predictions,)
 
         if labels:
