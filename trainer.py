@@ -221,12 +221,7 @@ class Trainer():
         averaged_eval_loss = total_eval_loss / len(dev_dataloader)
         predictions = np.concatenate(preds, axis=0).astype(np.float32)
         answers, all_predictions = self.convert_to_evaluation_features(predictions, self.dev_features)
-        # answers_df = convert_to_df(data=answers, mode='preds')
-        answers_df = convert_to_df(data=all_predictions, mode='preds')
-
-        if answers_df.shape[0] == 0:
-            wandb.alert(title="No Answers", text=f"answers_df.shape[0] = {answers_df.shape[0]}")
-            import pdb; pdb.set_trace()
+        answers_df = convert_to_df(data=answers, mode='preds')
 
         pmid2chemicals_and_genes, _, chemicals = load_entities_dict(path=self.entity_file)
         pmid2combinations, num_combinations = get_chemical_gene_combinations(input_dict=pmid2chemicals_and_genes)

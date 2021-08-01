@@ -150,11 +150,8 @@ def preprocess_data(df, chemicals, rel_types, is_gs=False, gs_files=None):
     df : pandas DataFrame
         Clean annotations DataFrame.
     """
-    try:
-        if df.shape[0] == 0:
-            raise Exception('There are not parsed annotations')
-    except Exception:
-        import pdb; pdb.set_trace()
+    # if df.shape[0] == 0:
+    #     raise Exception('There are not parsed annotations')
 
     if df.shape[1] != 4:
         raise Exception('Wrong column number in the annotations file')
@@ -169,7 +166,7 @@ def preprocess_data(df, chemicals, rel_types, is_gs=False, gs_files=None):
     if len(unique_input_relations.intersection(unique_relation_names)) > len(unique_relation_names):
         warnings.warn("Non-valid relations types exist. Skipping them.")
 
-    df = df.loc[df['rel_type'].isin(rel_types),:].copy()
+    df = df.loc[df['rel_type'].isin(rel_types), :].copy()
 
     # Remove predictions for PMIDs not valid
     if not is_gs:
@@ -184,21 +181,25 @@ def preprocess_data(df, chemicals, rel_types, is_gs=False, gs_files=None):
     skip_chem = []
     skip_gene = []
 
-    if any(df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) > 1):
-        skip_chem = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) > 1].index.tolist()
-        warnings.warn(f"The following lines have more than one CHEMICAL entity: {df.loc[skip_chem]}. Skipping them")
+    if df.shape[0] != 0:
+        if any(df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) > 1):
+            skip_chem = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) > 1].index.tolist()
+            warnings.warn(f"The following lines have more than one CHEMICAL entity: {df.loc[skip_chem]}. Skipping them")
 
-    if any(df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) == 0):
-        skip_gene = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) == 0].index.tolist()
-        warnings.warn(f"The following lines have less than one CHEMICAL entity: {df.loc[skip_gene]}. Skipping them")
+        if any(df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) == 0):
+            skip_gene = df.loc[df.apply(lambda x: x['is_arg1_chemical'] + x['is_arg2_chemical'], axis=1) == 0].index.tolist()
+            warnings.warn(f"The following lines have less than one CHEMICAL entity: {df.loc[skip_gene]}. Skipping them")
 
-    skip = skip_chem + skip_gene
+        skip = skip_chem + skip_gene
 
-    if len(skip) > 1:
-        df.drop(skip, inplace=True)
+        if len(skip) > 1:
+            df.drop(skip, inplace=True)
 
-    df['chemical'] = df.apply(lambda x: x['arg1'].split(':')[-1] if x['is_arg1_chemical'] else x['arg2'].split(':')[-1], axis=1)
-    df['gene'] = df.apply(lambda x: x['arg2'].split(':')[-1] if x['is_arg1_chemical'] else x['arg1'].split(':')[-1], axis=1)
+        df['chemical'] = df.apply(lambda x: x['arg1'].split(':')[-1] if x['is_arg1_chemical'] else x['arg2'].split(':')[-1], axis=1)
+        df['gene'] = df.apply(lambda x: x['arg2'].split(':')[-1] if x['is_arg1_chemical'] else x['arg1'].split(':')[-1], axis=1)
+    elif df.shape[0] == 0:
+        df['chemical'] = []
+        df['gene'] = []
 
     # Keep only relevant columns
     df = df[['pmid', 'rel_type', 'chemical', 'gene']].drop_duplicates(subset=['pmid', 'rel_type', 'chemical', 'gene']).copy()
