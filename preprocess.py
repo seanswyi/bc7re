@@ -326,7 +326,7 @@ def read_tsv(filename):
     return data
 
 
-def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='train'):
+def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='train', data_type='bc7dp'):
     data = []
 
     pbar = tqdm(iterable=abstracts, desc=f"Aggregating data for {mode}", total=len(abstracts))
@@ -377,9 +377,14 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
                 template['entities'][entity_id] = [entity_template]
 
         for relation in doc_relations:
-            relation_name = relation[1]
-            head_entity = relation[2].split(':')[1]
-            tail_entity = relation[3].split(':')[1]
+            if data_type == 'bc7dp':
+                relation_name = relation[1]
+                head_entity = relation[2].split(':')[1]
+                tail_entity = relation[3].split(':')[1]
+            elif data_type == 'bc6cp':
+                relation_name = relation[3]
+                head_entity = relation[4].split(':')[1]
+                tail_entity = relation[5].split(':')[1]
 
             relation_template = {'head_id': head_entity, 'tail_id': tail_entity, 'relation': relation_name}
             template['relations'].append(relation_template)
@@ -390,11 +395,19 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
 
 
 def main(args):
+    print("Arguments:")
+    for name, value in vars(args).items():
+        print(f'\t{name}: {value}')
+
     stanza.download('en', package='craft')
     stanza_pipeline = stanza.Pipeline('en', package='craft')
 
-    train_dir = os.path.join(args.data_dir, 'training')
-    dev_dir = os.path.join(args.data_dir, 'development')
+    if args.data_type == 'bc7dp':
+        train_dir = os.path.join(args.data_dir, 'training')
+        dev_dir = os.path.join(args.data_dir, 'development')
+    elif args.data_type == 'bc6cp':
+        train_dir = os.path.join(args.data_dir, 'chemprot_training')
+        dev_dir = os.path.join(args.data_dir, 'chemprot_development')
 
     train_abstracts_file = os.path.join(train_dir, args.abstracts_file.replace('MODE', 'training'))
     train_entities_file = os.path.join(train_dir, args.entities_file.replace('MODE', 'training'))
@@ -412,14 +425,14 @@ def main(args):
     dev_entities = read_tsv(filename=dev_entities_file)
     dev_relations = read_tsv(filename=dev_relations_file)
 
-    train_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=train_abstracts, entities=train_entities, relations=train_relations)
-    dev_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=dev_abstracts, entities=dev_entities, relations=dev_relations)
+    train_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=train_abstracts, entities=train_entities, relations=train_relations, data_type=args.data_type)
+    dev_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=dev_abstracts, entities=dev_entities, relations=dev_relations, mode='dev', data_type=args.data_type)
 
-    train_save_file = os.path.join(train_dir, 'train.json')
+    train_save_file = os.path.join(train_dir, f'train_{args.data_type}.json')
     with open(file=train_save_file, mode='w') as f:
         json.dump(obj=train_data, fp=f, indent=2)
 
-    dev_save_file = os.path.join(dev_dir, 'dev.json')
+    dev_save_file = os.path.join(dev_dir, f'dev_{args.data_type}.json')
     with open(file=dev_save_file, mode='w') as f:
         json.dump(obj=dev_data, fp=f, indent=2)
 
@@ -428,10 +441,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--data_dir', default='/hdd1/seokwon/data/BC7DP/drugprot-gs-training-development', type=str)
+    parser.add_argument('--data_type', default='bc7dp', type=str, choices=['bc6cp', 'bc7dp'])
     parser.add_argument('--abstracts_file', default='drugprot_MODE_abstracs.tsv', type=str)
     parser.add_argument('--entities_file', default='drugprot_MODE_entities.tsv', type=str)
     parser.add_argument('--relations_file', default='drugprot_MODE_relations.tsv', type=str)
 
     args = parser.parse_args()
+
+    if args.data_type == 'bc6cp':
+        args.data_dir = '/hdd1/seokwon/data/BC6CP/ChemProt_Corpus'
+        args.abstracts_file = 'chemprot_MODE_abstracts.tsv'
+        args.entities_file = 'chemprot_MODE_entities.tsv'
+        args.relations_file = 'chemprot_MODE_relations.tsv'
 
     main(args)
