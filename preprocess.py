@@ -4,9 +4,19 @@ from itertools import product
 import json
 import math
 import os
+import sys
 
 import stanza
 from tqdm import tqdm
+
+
+MAX_INT = sys.maxsize
+while True:
+    try:
+        csv.field_size_limit(MAX_INT)
+        break
+    except OverflowError:
+        MAX_INT = int(MAX_INT / 10)
 
 
 with open(file='/hdd1/seokwon/data/BC7DP/relation2id.json') as f:
@@ -327,7 +337,7 @@ def read_tsv(filename):
     return data
 
 
-def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='train', data_type='bc7dp'):
+def aggregate_data(stanza_pipeline, abstracts, entities, relations=[], mode='train', data_type='bc7dp'):
     data = []
 
     pbar = tqdm(iterable=abstracts, desc=f"Aggregating data for {mode}", total=len(abstracts))
@@ -378,7 +388,7 @@ def aggregate_data(stanza_pipeline, abstracts, entities, relations=None, mode='t
                 template['entities'][entity_id] = [entity_template]
 
         for relation in doc_relations:
-            if data_type == 'bc7dp':
+            if (data_type == 'bc7dp') and (mode != 'test'):
                 relation_name = relation[1]
                 head_entity = relation[2].split(':')[1]
                 tail_entity = relation[3].split(':')[1]
@@ -456,13 +466,11 @@ def main(args):
     elif args.data_type == 'bc7dp':
         test_abstracts_file = os.path.join(test_dir, args.abstracts_file.replace('drugprot_MODE', 'test_background')).replace('abstracs', 'abstracts')
         test_entities_file = os.path.join(test_dir, args.entities_file.replace('drugprot_MODE', 'test_background'))
-        test_relations_file = os.path.join(test_dir, args.relations_file.replace('drugprot_MODE', 'test_background'))
 
         test_abstracts = read_tsv(filename=test_abstracts_file)
         test_entities = read_tsv(filename=test_entities_file)
-        test_relations = read_tsv(filename=test_relations_file)
 
-        test_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=test_abstracts, entities=test_entities, relations=test_relations, mode='test', data_type=args.data_type)
+        test_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=test_abstracts, entities=test_entities, mode='test', data_type=args.data_type)
 
         test_save_file = os.path.join(test_dir, f'test_{args.data_type}.json')
         with open(file=test_save_file, mode='w') as f:
