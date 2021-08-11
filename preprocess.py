@@ -242,6 +242,7 @@ def convert_data_to_features(data, tokenizer, negative_ratio=2, entity_marker='a
                        'labels': labels}
             features.append(feature)
         elif setting == 'sentence':
+            import pdb; pdb.set_trace()
             for pair, label in zip(head_tail_pairs, labels):
                 tokens = []
                 word2token_span = {}
@@ -405,9 +406,11 @@ def main(args):
     if args.data_type == 'bc7dp':
         train_dir = os.path.join(args.data_dir, 'training')
         dev_dir = os.path.join(args.data_dir, 'development')
+        test_dir = os.path.join(args.data_dir, 'test-background')
     elif args.data_type == 'bc6cp':
         train_dir = os.path.join(args.data_dir, 'chemprot_training')
         dev_dir = os.path.join(args.data_dir, 'chemprot_development')
+        test_dir = os.path.join(args.data_dir, 'chemprot_test_gs')
 
     train_abstracts_file = os.path.join(train_dir, args.abstracts_file.replace('MODE', 'training'))
     train_entities_file = os.path.join(train_dir, args.entities_file.replace('MODE', 'training'))
@@ -435,6 +438,35 @@ def main(args):
     dev_save_file = os.path.join(dev_dir, f'dev_{args.data_type}.json')
     with open(file=dev_save_file, mode='w') as f:
         json.dump(obj=dev_data, fp=f, indent=2)
+
+    if args.data_type == 'bc6cp':
+        test_abstracts_file = os.path.join(test_dir, args.abstracts_file.replace('MODE', 'test')).replace('.tsv', '_gs.tsv')
+        test_entities_file = os.path.join(test_dir, args.entities_file.replace('MODE', 'test')).replace('.tsv', '_gs.tsv')
+        test_relations_file = os.path.join(test_dir, args.relations_file.replace('MODE', 'test')).replace('.tsv', '_gs.tsv')
+
+        test_abstracts = read_tsv(filename=test_abstracts_file)
+        test_entities = read_tsv(filename=test_entities_file)
+        test_relations = read_tsv(filename=test_relations_file)
+
+        test_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=test_abstracts, entities=test_entities, relations=test_relations, mode='test', data_type=args.data_type)
+
+        test_save_file = os.path.join(test_dir, f'test_{args.data_type}.json')
+        with open(file=test_save_file, mode='w') as f:
+            json.dump(obj=test_data, fp=f, indent=2)
+    elif args.data_type == 'bc7dp':
+        test_abstracts_file = os.path.join(test_dir, args.abstracts_file.replace('drugprot_MODE', 'test_background')).replace('abstracs', 'abstracts')
+        test_entities_file = os.path.join(test_dir, args.entities_file.replace('drugprot_MODE', 'test_background'))
+        test_relations_file = os.path.join(test_dir, args.relations_file.replace('drugprot_MODE', 'test_background'))
+
+        test_abstracts = read_tsv(filename=test_abstracts_file)
+        test_entities = read_tsv(filename=test_entities_file)
+        test_relations = read_tsv(filename=test_relations_file)
+
+        test_data = aggregate_data(stanza_pipeline=stanza_pipeline, abstracts=test_abstracts, entities=test_entities, relations=test_relations, mode='test', data_type=args.data_type)
+
+        test_save_file = os.path.join(test_dir, f'test_{args.data_type}.json')
+        with open(file=test_save_file, mode='w') as f:
+            json.dump(obj=test_data, fp=f, indent=2)
 
 
 if __name__ == '__main__':
