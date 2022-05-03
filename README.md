@@ -1,1 +1,1 @@
-# bc7re# bc7_dpre
+# Pipeline for the BioCreative VII Track 1 Competition (2021)
